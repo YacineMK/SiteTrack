@@ -57,7 +57,7 @@ func (r *PostgresRepository) Create(ctx context.Context, user User) (User, error
 		}
 		return User{}, err
 	}
-	return toUser(row), nil
+	return toUser(row.ID, row.Name, row.Email, row.PasswordHash, row.AppRole, row.TokenVersion, row.CreatedAt, row.UpdatedAt), nil
 }
 
 func (r *PostgresRepository) GetByEmail(ctx context.Context, email string) (User, error) {
@@ -68,7 +68,7 @@ func (r *PostgresRepository) GetByEmail(ctx context.Context, email string) (User
 		}
 		return User{}, err
 	}
-	return toUser(row), nil
+	return toUser(row.ID, row.Name, row.Email, row.PasswordHash, row.AppRole, row.TokenVersion, row.CreatedAt, row.UpdatedAt), nil
 }
 
 func (r *PostgresRepository) GetByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -79,23 +79,23 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id uuid.UUID) (User, e
 		}
 		return User{}, err
 	}
-	return toUser(row), nil
+	return toUser(row.ID, row.Name, row.Email, row.PasswordHash, row.AppRole, row.TokenVersion, row.CreatedAt, row.UpdatedAt), nil
 }
 
 func (r *PostgresRepository) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	return r.queries.EmailExists(ctx, email)
 }
 
-func toUser(row sqlc.User) User {
+func toUser(id uuid.UUID, name, email, passwordHash, appRole string, tokenVersion int32, createdAt, updatedAt time.Time) User {
 	return User{
-		ID:           row.ID,
-		Name:         row.Name,
-		Email:        row.Email,
-		PasswordHash: row.PasswordHash,
-		AppRole:      row.AppRole,
-		TokenVersion: row.TokenVersion,
-		CreatedAt:    row.CreatedAt,
-		UpdatedAt:    row.UpdatedAt,
+		ID:           id,
+		Name:         name,
+		Email:        email,
+		PasswordHash: passwordHash,
+		AppRole:      appRole,
+		TokenVersion: tokenVersion,
+		CreatedAt:    createdAt,
+		UpdatedAt:    updatedAt,
 	}
 }
 

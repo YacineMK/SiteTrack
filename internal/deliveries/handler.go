@@ -6,16 +6,18 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/YacineMK/SiteTrack/internal/middleware"
 	jsonutil "github.com/YacineMK/SiteTrack/kit/json"
 )
 
 type Handler struct {
-	svc   Service
-	utils Utils
+	svc     Service
+	utils   Utils
+	checker middleware.PolicyChecker
 }
 
-func NewHandler(svc Service) *Handler {
-	return &Handler{svc: svc, utils: NewUtils()}
+func NewHandler(svc Service, checker middleware.PolicyChecker) *Handler {
+	return &Handler{svc: svc, utils: NewUtils(), checker: checker}
 }
 
 func (h *Handler) createCompany(w http.ResponseWriter, r *http.Request) {

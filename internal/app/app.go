@@ -49,12 +49,12 @@ func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtMan
 		public:         []module{authModule},
 		protected: []module{
 			materials.New(materials.Dependencies{DB: postgres.Pool}),
-			companystore.New(companystore.Dependencies{DB: postgres.Pool}),
+			companystore.New(companystore.Dependencies{DB: postgres.Pool, Checker: rolesModule.Checker()}),
 			rolesModule,
 			projects.New(projects.Dependencies{DB: postgres.Pool, Redis: redis}),
 			projectstore.New(projectstore.Dependencies{DB: postgres.Pool}),
 			tasks.New(tasks.Dependencies{DB: postgres.Pool, Redis: redis}),
-			deliveries.New(deliveries.Dependencies{DB: postgres.Pool}),
+			deliveries.New(deliveries.Dependencies{DB: postgres.Pool, Checker: rolesModule.Checker()}),
 			notifications.New(notifications.Dependencies{DB: postgres.Pool, Hub: notificationHub}),
 		},
 	}

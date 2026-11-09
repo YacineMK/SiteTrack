@@ -3,10 +3,13 @@ package companystore
 import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/YacineMK/SiteTrack/internal/middleware"
 )
 
 type Dependencies struct {
-	DB *pgxpool.Pool
+	DB      *pgxpool.Pool
+	Checker middleware.PolicyChecker
 }
 
 type Module struct {
@@ -14,7 +17,7 @@ type Module struct {
 }
 
 func New(deps Dependencies) *Module {
-	return &Module{handler: NewHandler(NewService(NewPostgresRepository(deps.DB)))}
+	return &Module{handler: NewHandler(NewService(NewPostgresRepository(deps.DB)), deps.Checker)}
 }
 
 func (m *Module) Routes(r chi.Router) {

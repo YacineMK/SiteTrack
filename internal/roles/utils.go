@@ -23,6 +23,7 @@ func (utils) ToRoleResponse(role Role) RoleResponse {
 		ID:          role.ID.String(),
 		Name:        role.Name,
 		Description: role.Description,
+		IsSystem:    role.IsSystem,
 	}
 }
 
@@ -33,7 +34,9 @@ func (utils) WriteServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrRoleExists):
 		jsonutil.Error(w, http.StatusConflict, "role already exists")
 	case errors.Is(err, ErrRoleNotFound):
-		jsonutil.Error(w, http.StatusNotFound, "role not found")
+		jsonutil.Error(w, http.StatusBadRequest, "role not found")
+	case errors.Is(err, ErrUserNotFound):
+		jsonutil.Error(w, http.StatusNotFound, "user not found")
 	case errors.Is(err, ErrPolicyExists):
 		jsonutil.Error(w, http.StatusConflict, "policy already exists")
 	case errors.Is(err, ErrPolicyNotFound):

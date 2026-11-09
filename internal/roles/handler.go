@@ -6,16 +6,45 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/YacineMK/SiteTrack/internal/middleware"
 	jsonutil "github.com/YacineMK/SiteTrack/kit/json"
+	"github.com/YacineMK/SiteTrack/kit/rbac"
 )
 
 type Handler struct {
-	svc   Service
-	utils Utils
+	svc     Service
+	utils   Utils
+	checker middleware.PolicyChecker
 }
 
-func NewHandler(svc Service) *Handler {
-	return &Handler{svc: svc, utils: NewUtils()}
+func NewHandler(svc Service, checker middleware.PolicyChecker) *Handler {
+	return &Handler{svc: svc, utils: NewUtils(), checker: checker}
+}
+
+func (h *Handler) resources(w http.ResponseWriter, r *http.Request) {
+	jsonutil.JSON(w, http.StatusOK, rbac.Resources)
+}
+
+func (h *Handler) assignRole(w http.ResponseWriter, r *http.Request) {
+	userID, err := uuid.Parse(chi.URLParam(r, "user_id"))
+	if err != nil {
+		jsonutil.Error(w, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	var req AssignRoleRequest
+	if err := jsonutil.DecodeJSON(r, &req); err != nil {
+		jsonutil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	user, err := h.svc.AssignRole(r.Context(), userID, req)
+	if err != nil {
+		h.utils.WriteServiceError(w, err)
+		return
+	}
+
+	jsonutil.JSON(w, http.StatusOK, user)
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {

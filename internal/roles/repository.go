@@ -3,24 +3,37 @@ package roles
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/YacineMK/SiteTrack/internal/database/sqlc"
+	"github.com/YacineMK/SiteTrack/kit/rbac"
 )
 
 var (
 	ErrRoleExists   = errors.New("role already exists")
 	ErrRoleNotFound = errors.New("role not found")
 	ErrPolicyExists = errors.New("policy already exists")
+	ErrUserNotFound = errors.New("user not found")
 )
 
 type Role struct {
 	ID          uuid.UUID
 	Name        string
 	Description string
+	IsSystem    bool
+}
+
+type UserRole struct {
+	ID        uuid.UUID
+	Name      string
+	Email     string
+	AppRole   string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type Policy struct {
@@ -33,9 +46,11 @@ type Repository interface {
 	CreateRole(ctx context.Context, name, description string) (Role, error)
 	ListRoles(ctx context.Context) ([]Role, error)
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
+	GetRoleByName(ctx context.Context, name string) (Role, error)
 	AddPolicy(ctx context.Context, roleID uuid.UUID, resource, action string) error
 	ListPolicies(ctx context.Context, roleID uuid.UUID) ([]Policy, error)
 	DeletePolicy(ctx context.Context, roleID uuid.UUID, resource, action string) (int64, error)
+	AssignRole(ctx context.Context, userID uuid.UUID, roleName string) (UserRole, error)
 }
 
 type PostgresRepository struct {
@@ -124,11 +139,65 @@ func (r *PostgresRepository) DeletePolicy(ctx context.Context, roleID uuid.UUID,
 	})
 }
 
+func (r *PostgresRepository) GetRoleByName(ctx context.Context, name string) (Role, error) {
+	row, err := r.queries.GetRoleByName(ctx, name)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Role{}, ErrRoleNotFound
+		}
+		return Role{}, err
+	}
+	return toRole(row), nil
+}
+
+func (r *PostgresRepository) AssignRole(ctx context.Context, userID uuid.UUID, roleName string) (UserRole, error) {
+	if _, err := r.queries.GetRoleByName(ctx, roleName); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return UserRole{}, ErrRoleNotFound
+		}
+		return UserRole{}, err
+	}
+
+	row, err := r.queries.AssignUserRole(ctx, sqlc.AssignUserRoleParams{
+		UserID:   userID,
+		RoleName: roleName,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return UserRole{}, ErrUserNotFound
+		}
+		return UserRole{}, err
+	}
+
+	return UserRole{
+		ID:        row.ID,
+		Name:      row.Name,
+		Email:     row.Email,
+		AppRole:   row.AppRole,
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
+	}, nil
+}
+
+func (r *PostgresRepository) HasPolicy(ctx context.Context, role, resource, action string) (bool, error) {
+	policies, err := r.queries.GetPoliciesByRoleName(ctx, role)
+	if err != nil {
+		return false, err
+	}
+
+	result := make([]rbac.Policy, 0, len(policies))
+	for _, policy := range policies {
+		result = append(result, rbac.Policy{Resource: policy.Resource, Action: policy.Action})
+	}
+	return rbac.Allows(result, resource, action), nil
+}
+
 func toRole(row sqlc.AppRole) Role {
 	return Role{
 		ID:          row.ID,
 		Name:        row.Name,
 		Description: row.Description,
+		IsSystem:    row.IsSystem,
 	}
 }
 

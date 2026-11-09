@@ -217,9 +217,11 @@ func (s *service) ValidateAccessToken(ctx context.Context, accessToken string) (
 	if err != nil {
 		return nil, ErrUnauthorized
 	}
-	if _, err := s.sessionUser(ctx, claims); err != nil {
+	user, err := s.sessionUser(ctx, claims)
+	if err != nil {
 		return nil, err
 	}
+	claims.AppRole = user.AppRole
 	return claims, nil
 }
 

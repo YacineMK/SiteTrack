@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/YacineMK/SiteTrack/kit/rbac"
 )
 
 var (
@@ -19,6 +21,7 @@ type Service interface {
 	CreatePolicy(ctx context.Context, roleID uuid.UUID, req CreatePolicyRequest) (PolicyResponse, error)
 	ListPolicies(ctx context.Context, roleID uuid.UUID) ([]PolicyResponse, error)
 	DeletePolicy(ctx context.Context, roleID uuid.UUID, resource, action string) error
+	AssignRole(ctx context.Context, userID uuid.UUID, req AssignRoleRequest) (AssignedUserResponse, error)
 }
 
 type service struct {
@@ -61,6 +64,9 @@ func (s *service) CreatePolicy(ctx context.Context, roleID uuid.UUID, req Create
 	req.Resource = strings.TrimSpace(req.Resource)
 	req.Action = strings.TrimSpace(req.Action)
 	if err := req.Validate(); err != nil {
+		return PolicyResponse{}, ErrInvalidInput
+	}
+	if !rbac.Valid(req.Resource, req.Action) {
 		return PolicyResponse{}, ErrInvalidInput
 	}
 
@@ -114,4 +120,25 @@ func (s *service) DeletePolicy(ctx context.Context, roleID uuid.UUID, resource, 
 		return ErrPolicyNotFound
 	}
 	return nil
+}
+
+func (s *service) AssignRole(ctx context.Context, userID uuid.UUID, req AssignRoleRequest) (AssignedUserResponse, error) {
+	req.Role = strings.TrimSpace(req.Role)
+	if err := req.Validate(); err != nil {
+		return AssignedUserResponse{}, ErrInvalidInput
+	}
+
+	user, err := s.repo.AssignRole(ctx, userID, req.Role)
+	if err != nil {
+		return AssignedUserResponse{}, err
+	}
+
+	return AssignedUserResponse{
+		ID:        user.ID,
+		Name:      user.Name,
+		Email:     user.Email,
+		AppRole:   user.AppRole,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+	}, nil
 }

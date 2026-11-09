@@ -1,6 +1,11 @@
 package roles
 
-import validation "github.com/go-ozzo/ozzo-validation/v4"
+import (
+	"time"
+
+	validation "github.com/go-ozzo/ozzo-validation/v4"
+	"github.com/google/uuid"
+)
 
 type CreateRoleRequest struct {
 	Name        string `json:"name"`
@@ -18,6 +23,26 @@ type RoleResponse struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	IsSystem    bool   `json:"is_system"`
+}
+
+type AssignRoleRequest struct {
+	Role string `json:"role"`
+}
+
+func (r AssignRoleRequest) Validate() error {
+	return validation.ValidateStruct(&r,
+		validation.Field(&r.Role, validation.Required, validation.Length(1, 64)),
+	)
+}
+
+type AssignedUserResponse struct {
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	Email     string    `json:"email"`
+	AppRole   string    `json:"app_role"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type CreatePolicyRequest struct {
