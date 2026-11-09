@@ -10,6 +10,18 @@ import (
 	"github.com/google/uuid"
 )
 
+type AppRole struct {
+	ID          uuid.UUID
+	Name        string
+	Description string
+}
+
+type RolePolicy struct {
+	RoleID   uuid.UUID
+	Resource string
+	Action   string
+}
+
 type User struct {
 	ID           uuid.UUID
 	Name         string

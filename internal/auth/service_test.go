@@ -115,6 +115,7 @@ func TestRegisterRejectsInvalidInput(t *testing.T) {
 		{name: "invalid email", req: RegisterRequest{Name: "A", Email: "not-an-email", Password: "password123", AppRole: "user"}},
 		{name: "short password", req: RegisterRequest{Name: "A", Email: "a@example.com", Password: "short", AppRole: "user"}},
 		{name: "empty role", req: RegisterRequest{Name: "A", Email: "a@example.com", Password: "password123", AppRole: ""}},
+		{name: "unknown role", req: RegisterRequest{Name: "A", Email: "a@example.com", Password: "password123", AppRole: "superuser"}},
 	}
 
 	for _, tt := range tests {
