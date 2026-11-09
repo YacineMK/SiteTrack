@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -48,9 +47,7 @@ func (h *AppNotificationHandler) Handle(ctx context.Context, task *asynq.Task) e
 
 	h.hub.Publish(row.UserID, notificationResponse(row))
 
-	if _, err := h.queries.CompleteOutbox(ctx, payload.OutboxID); err != nil {
-		log.Printf("outbox complete %s: %v", payload.OutboxID, err)
-	}
+	h.queries.CompleteOutbox(ctx, payload.OutboxID)
 	return nil
 }
 

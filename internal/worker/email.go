@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
@@ -71,9 +70,7 @@ func (h *EmailHandler) Handle(ctx context.Context, task *asynq.Task) error {
 		return err
 	}
 
-	if _, err := h.queries.CompleteOutbox(ctx, payload.OutboxID); err != nil {
-		log.Printf("outbox complete %s: %v", payload.OutboxID, err)
-	}
+	h.queries.CompleteOutbox(ctx, payload.OutboxID)
 	return nil
 }
 

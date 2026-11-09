@@ -88,27 +88,20 @@ func main() {
 
 	go func() {
 		if err := outboxWorker.Run(runCtx); err != nil && !errors.Is(err, context.Canceled) {
-			log.Printf("worker error: %v", err)
 			stop()
 		}
 	}()
 
 	go func() {
 		if err := a.Run(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("server error: %v", err)
 			stop()
 		}
 	}()
 
-	log.Printf("listening on %s", cfg.Port)
 	<-runCtx.Done()
-
-	log.Println("shutting down")
 
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelShutdown()
 
-	if err := a.Shutdown(shutdownCtx); err != nil {
-		log.Printf("shutdown error: %v", err)
-	}
+	a.Shutdown(shutdownCtx)
 }

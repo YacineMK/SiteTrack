@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"errors"
-	"log"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -34,9 +33,6 @@ func (w *Worker) dispatchBatch(ctx context.Context) {
 		BatchSize:   w.config.BatchSize,
 	})
 	if err != nil {
-		if !errors.Is(err, context.Canceled) {
-			log.Printf("outbox claim: %v", err)
-		}
 		return
 	}
 
@@ -65,9 +61,7 @@ func (w *Worker) enqueue(ctx context.Context, row sqlc.Outbox) {
 		return
 	}
 
-	if _, err := w.queries.MarkOutboxEnqueued(ctx, row.ID); err != nil {
-		log.Printf("outbox mark enqueued %s: %v", row.ID, err)
-	}
+	w.queries.MarkOutboxEnqueued(ctx, row.ID)
 }
 
 func (w *Worker) reschedule(ctx context.Context, row sqlc.Outbox, message string) {
@@ -76,14 +70,12 @@ func (w *Worker) reschedule(ctx context.Context, row sqlc.Outbox, message string
 		status = "failed"
 	}
 
-	if _, err := w.queries.FailOutbox(ctx, sqlc.FailOutboxParams{
+	w.queries.FailOutbox(ctx, sqlc.FailOutboxParams{
 		ID:            row.ID,
 		Status:        status,
 		NextAttemptAt: time.Now().Add(backoff(row.Attempts)),
 		LastError:     message,
-	}); err != nil {
-		log.Printf("outbox fail %s: %v", row.ID, err)
-	}
+	})
 }
 
 func backoff(attempts int32) time.Duration {
