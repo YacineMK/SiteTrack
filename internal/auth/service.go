@@ -93,13 +93,59 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (AuthResponse, er
 		return AuthResponse{}, err
 	}
 
-	return AuthResponse{
-		AccessToken:  pair.AccessToken,
-		RefreshToken: pair.RefreshToken,
-		TokenType:    "Bearer",
-		ExpiresIn:    int64(time.Until(pair.AccessExpiresAt).Seconds()),
-		User:         toUserResponse(user),
-	}, nil
+	return tokenResponse(pair, user), nil
+}
+
+func (s *Service) Refresh(ctx context.Context, req RefreshRequest) (AuthResponse, error) {
+	if err := req.Validate(); err != nil {
+		return AuthResponse{}, ErrInvalidInput
+	}
+
+	claims, err := s.jwt.ParseRefresh(req.RefreshToken)
+	if err != nil {
+		return AuthResponse{}, ErrUnauthorized
+	}
+
+	user, err := s.sessionUser(ctx, claims)
+	if err != nil {
+		return AuthResponse{}, err
+	}
+
+	pair, err := s.jwt.GeneratePair(user.ID.String(), user.AppRole, user.TokenVersion)
+	if err != nil {
+		return AuthResponse{}, err
+	}
+
+	if err := s.revoke(ctx, claims); err != nil {
+		return AuthResponse{}, err
+	}
+
+	return tokenResponse(pair, user), nil
+}
+
+func (s *Service) Logout(ctx context.Context, accessToken string, req LogoutRequest) error {
+	if err := req.Validate(); err != nil {
+		return ErrInvalidInput
+	}
+
+	accessClaims, err := s.jwt.ParseAccess(accessToken)
+	if err != nil {
+		return ErrUnauthorized
+	}
+
+	refreshClaims, err := s.jwt.ParseRefresh(req.RefreshToken)
+	if err != nil {
+		return ErrUnauthorized
+	}
+
+	if accessClaims.UserID != refreshClaims.UserID {
+		return ErrUnauthorized
+	}
+
+	if err := s.revoke(ctx, accessClaims); err != nil {
+		return err
+	}
+	return s.revoke(ctx, refreshClaims)
 }
 
 func (s *Service) Me(ctx context.Context, userID uuid.UUID) (UserResponse, error) {
@@ -118,32 +164,59 @@ func (s *Service) Authenticate(ctx context.Context, accessToken string) (*kitjwt
 	if err != nil {
 		return nil, ErrUnauthorized
 	}
-
-	revoked, err := s.blacklist.Has(ctx, claims.ID)
-	if err != nil {
+	if _, err := s.sessionUser(ctx, claims); err != nil {
 		return nil, err
 	}
+	return claims, nil
+}
+
+func (s *Service) sessionUser(ctx context.Context, claims *kitjwt.Claims) (User, error) {
+	revoked, err := s.blacklist.Has(ctx, claims.ID)
+	if err != nil {
+		return User{}, err
+	}
 	if revoked {
-		return nil, ErrUnauthorized
+		return User{}, ErrUnauthorized
 	}
 
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, ErrUnauthorized
+		return User{}, ErrUnauthorized
 	}
 
 	user, err := s.repo.GetByID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			return nil, ErrUnauthorized
+			return User{}, ErrUnauthorized
 		}
-		return nil, err
+		return User{}, err
 	}
 	if user.TokenVersion != claims.TokenVersion {
-		return nil, ErrUnauthorized
+		return User{}, ErrUnauthorized
 	}
 
-	return claims, nil
+	return user, nil
+}
+
+func (s *Service) revoke(ctx context.Context, claims *kitjwt.Claims) error {
+	if claims.ExpiresAt == nil {
+		return nil
+	}
+	ttl := time.Until(claims.ExpiresAt.Time)
+	if ttl <= 0 {
+		return nil
+	}
+	return s.blacklist.Add(ctx, claims.ID, ttl)
+}
+
+func tokenResponse(pair kitjwt.Pair, user User) AuthResponse {
+	return AuthResponse{
+		AccessToken:  pair.AccessToken,
+		RefreshToken: pair.RefreshToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    int64(time.Until(pair.AccessExpiresAt).Seconds()),
+		User:         toUserResponse(user),
+	}
 }
 
 func toUserResponse(user User) UserResponse {
