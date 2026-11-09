@@ -10,8 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hibiken/asynq"
+
 	"github.com/YacineMK/SiteTrack/internal/app"
 	"github.com/YacineMK/SiteTrack/internal/database"
+	"github.com/YacineMK/SiteTrack/internal/worker"
 	"github.com/YacineMK/SiteTrack/kit/config"
 	kitjwt "github.com/YacineMK/SiteTrack/kit/jwt"
 	kitredis "github.com/YacineMK/SiteTrack/kit/redis"
@@ -54,6 +57,29 @@ func main() {
 
 	runCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	outboxWorker := worker.New(worker.Dependencies{
+		DB: postgres.Pool,
+		Redis: asynq.RedisClientOpt{
+			Addr:     cfg.RedisAddr,
+			Password: cfg.RedisPassword,
+			DB:       cfg.RedisDB,
+		},
+		Config: worker.Config{
+			Concurrency:  cfg.WorkerConcurrency,
+			BatchSize:    int32(cfg.OutboxBatchSize),
+			PollInterval: cfg.OutboxPollInterval,
+			LockTimeout:  cfg.OutboxLockTimeout,
+			MaxAttempts:  cfg.OutboxMaxAttempts,
+		},
+	})
+
+	go func() {
+		if err := outboxWorker.Run(runCtx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("worker error: %v", err)
+			stop()
+		}
+	}()
 
 	go func() {
 		if err := a.Run(); err != nil && !errors.Is(err, http.ErrServerClosed) {
