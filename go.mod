@@ -5,6 +5,7 @@ go 1.26.4
 require (
 	github.com/bytedance/sonic v1.15.5
 	github.com/go-chi/chi/v5 v5.5.0
+	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/joho/godotenv v1.5.1
 	github.com/redis/go-redis/v9 v9.23.0
