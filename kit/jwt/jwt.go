@@ -11,33 +11,79 @@ import (
 
 var ErrInvalidToken = errors.New("invalid token")
 
+type TokenType string
+
+const (
+	AccessToken  TokenType = "access"
+	RefreshToken TokenType = "refresh"
+)
+
 type Claims struct {
-	UserID       string `json:"user_id"`
-	AppRole      string `json:"app_role"`
-	TokenVersion int32  `json:"token_version"`
+	UserID       string    `json:"user_id"`
+	AppRole      string    `json:"app_role"`
+	TokenVersion int32     `json:"token_version"`
+	TokenType    TokenType `json:"token_type"`
 	jwtlib.RegisteredClaims
 }
 
+type Pair struct {
+	AccessToken      string
+	AccessExpiresAt  time.Time
+	RefreshToken     string
+	RefreshExpiresAt time.Time
+}
+
 type Manager struct {
-	secret []byte
-	ttl    time.Duration
+	secret     []byte
+	accessTTL  time.Duration
+	refreshTTL time.Duration
 }
 
-func New(secret string, ttl time.Duration) *Manager {
-	return &Manager{secret: []byte(secret), ttl: ttl}
+func New(secret string, accessTTL, refreshTTL time.Duration) *Manager {
+	return &Manager{
+		secret:     []byte(secret),
+		accessTTL:  accessTTL,
+		refreshTTL: refreshTTL,
+	}
 }
 
-func (m *Manager) Generate(userID, appRole string, tokenVersion int32) (string, time.Time, error) {
+func (m *Manager) GeneratePair(userID, appRole string, tokenVersion int32) (Pair, error) {
+	accessToken, accessExpiresAt, err := m.generate(userID, appRole, tokenVersion, AccessToken, m.accessTTL)
+	if err != nil {
+		return Pair{}, err
+	}
+	refreshToken, refreshExpiresAt, err := m.generate(userID, appRole, tokenVersion, RefreshToken, m.refreshTTL)
+	if err != nil {
+		return Pair{}, err
+	}
+	return Pair{
+		AccessToken:      accessToken,
+		AccessExpiresAt:  accessExpiresAt,
+		RefreshToken:     refreshToken,
+		RefreshExpiresAt: refreshExpiresAt,
+	}, nil
+}
+
+func (m *Manager) ParseAccess(tokenString string) (*Claims, error) {
+	return m.parse(tokenString, AccessToken)
+}
+
+func (m *Manager) ParseRefresh(tokenString string) (*Claims, error) {
+	return m.parse(tokenString, RefreshToken)
+}
+
+func (m *Manager) generate(userID, appRole string, tokenVersion int32, tokenType TokenType, ttl time.Duration) (string, time.Time, error) {
 	jti, err := uuid.NewV7()
 	if err != nil {
 		return "", time.Time{}, err
 	}
 	now := time.Now()
-	expiresAt := now.Add(m.ttl)
+	expiresAt := now.Add(ttl)
 	claims := Claims{
 		UserID:       userID,
 		AppRole:      appRole,
 		TokenVersion: tokenVersion,
+		TokenType:    tokenType,
 		RegisteredClaims: jwtlib.RegisteredClaims{
 			ID:        jti.String(),
 			IssuedAt:  jwtlib.NewNumericDate(now),
@@ -51,7 +97,7 @@ func (m *Manager) Generate(userID, appRole string, tokenVersion int32) (string, 
 	return token, expiresAt, nil
 }
 
-func (m *Manager) Parse(tokenString string) (*Claims, error) {
+func (m *Manager) parse(tokenString string, expected TokenType) (*Claims, error) {
 	claims := &Claims{}
 	token, err := jwtlib.ParseWithClaims(
 		tokenString,
@@ -67,6 +113,9 @@ func (m *Manager) Parse(tokenString string) (*Claims, error) {
 	}
 	if !token.Valid {
 		return nil, ErrInvalidToken
+	}
+	if claims.TokenType != expected {
+		return nil, fmt.Errorf("%w: unexpected token type %q", ErrInvalidToken, claims.TokenType)
 	}
 	return claims, nil
 }

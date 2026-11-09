@@ -11,4 +11,5 @@ func (a *App) routes() {
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		jsonutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	a.auth.Routes(r)
 }
