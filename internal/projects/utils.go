@@ -31,8 +31,17 @@ func (utils) ToResponse(project Project) ProjectResponse {
 		PlannedStartDate: project.PlannedStartDate.Format(dateLayout),
 		PlannedEndDate:   project.PlannedEndDate.Format(dateLayout),
 		IsAdmin:          project.IsAdmin,
-		CreatedAt:        project.CreatedAt,
-		UpdatedAt:        project.UpdatedAt,
+		MemberCount:      project.MemberCount,
+		TaskCounts: TaskCounts{
+			NotStarted: project.NotStarted,
+			InProgress: project.InProgress,
+			Done:       project.Done,
+		},
+		Progress:     project.Progress,
+		LateCount:    project.LateCount,
+		BlockedCount: project.BlockedCount,
+		CreatedAt:    project.CreatedAt,
+		UpdatedAt:    project.UpdatedAt,
 	}
 }
 

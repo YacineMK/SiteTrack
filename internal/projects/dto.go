@@ -44,14 +44,25 @@ func (r UpdateProjectRequest) Validate() error {
 }
 
 type ProjectResponse struct {
-	DisplayID        string    `json:"display_id"`
-	Name             string    `json:"name"`
-	Description      string    `json:"description"`
-	PlannedStartDate string    `json:"planned_start_date"`
-	PlannedEndDate   string    `json:"planned_end_date"`
-	IsAdmin          bool      `json:"is_admin"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	DisplayID        string     `json:"display_id"`
+	Name             string     `json:"name"`
+	Description      string     `json:"description"`
+	PlannedStartDate string     `json:"planned_start_date"`
+	PlannedEndDate   string     `json:"planned_end_date"`
+	IsAdmin          bool       `json:"is_admin"`
+	MemberCount      int64      `json:"member_count"`
+	TaskCounts       TaskCounts `json:"task_counts"`
+	Progress         float64    `json:"progress"`
+	LateCount        int64      `json:"late_count"`
+	BlockedCount     int64      `json:"blocked_count"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
+type TaskCounts struct {
+	NotStarted int64 `json:"not_started"`
+	InProgress int64 `json:"in_progress"`
+	Done       int64 `json:"done"`
 }
 
 type MemberResponse struct {

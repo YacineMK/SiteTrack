@@ -56,7 +56,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	}
 	role, _ := middleware.AppRole(r.Context())
 
-	projects, err := h.svc.List(r.Context(), userID, role == "super_admin", limit, offset)
+	projects, err := h.svc.List(r.Context(), userID, role == "super_admin", r.URL.Query().Get("late") == "true", r.URL.Query().Get("sort_by"), r.URL.Query().Get("sort_dir"), limit, offset)
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return
@@ -78,7 +78,7 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 	}
 	role, _ := middleware.AppRole(r.Context())
 
-	projects, err := h.svc.Search(r.Context(), userID, role == "super_admin", r.URL.Query().Get("q"), limit, offset)
+	projects, err := h.svc.Search(r.Context(), userID, role == "super_admin", r.URL.Query().Get("late") == "true", r.URL.Query().Get("q"), limit, offset)
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return

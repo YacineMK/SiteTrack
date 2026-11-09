@@ -46,42 +46,77 @@ func (q *Queries) AddProjectMemberIfAbsent(ctx context.Context, arg AddProjectMe
 }
 
 const countProjects = `-- name: CountProjects :one
+WITH stats AS (
+    SELECT project_id,
+           COUNT(*) FILTER (WHERE status = 'not_started') AS not_started,
+           COUNT(*) FILTER (WHERE status = 'in_progress') AS in_progress,
+           COUNT(*) FILTER (WHERE status = 'done') AS done,
+           COUNT(*) FILTER (WHERE (status = 'not_started' AND planned_start_date < CURRENT_DATE)
+                              OR (status = 'in_progress' AND planned_end_date < CURRENT_DATE)) AS late
+    FROM tasks
+    GROUP BY project_id
+), members AS (
+    SELECT project_id, COUNT(*) AS member_count FROM project_members GROUP BY project_id
+)
 SELECT COUNT(*)
 FROM projects p
-WHERE $1::boolean
-   OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $2)
+LEFT JOIN stats ON stats.project_id = p.id
+WHERE ($1::boolean
+   OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $2))
+  AND (NOT $3::boolean OR COALESCE(stats.late, 0) > 0)
 `
 
 type CountProjectsParams struct {
 	SuperAdmin bool
 	UserID     uuid.UUID
+	LateOnly   bool
 }
 
 func (q *Queries) CountProjects(ctx context.Context, arg CountProjectsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countProjects, arg.SuperAdmin, arg.UserID)
+	row := q.db.QueryRow(ctx, countProjects, arg.SuperAdmin, arg.UserID, arg.LateOnly)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
 }
 
 const countSearchProjects = `-- name: CountSearchProjects :one
+WITH stats AS (
+    SELECT project_id,
+           COUNT(*) FILTER (WHERE status = 'not_started') AS not_started,
+           COUNT(*) FILTER (WHERE status = 'in_progress') AS in_progress,
+           COUNT(*) FILTER (WHERE status = 'done') AS done,
+           COUNT(*) FILTER (WHERE (status = 'not_started' AND planned_start_date < CURRENT_DATE)
+                              OR (status = 'in_progress' AND planned_end_date < CURRENT_DATE)) AS late
+    FROM tasks
+    GROUP BY project_id
+), members AS (
+    SELECT project_id, COUNT(*) AS member_count FROM project_members GROUP BY project_id
+)
 SELECT COUNT(*)
 FROM projects p
+LEFT JOIN stats ON stats.project_id = p.id
 WHERE ($1::boolean
    OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $2))
   AND (p.search @@ websearch_to_tsquery('english', $3)
    OR p.name ILIKE '%' || $3 || '%'
    OR p.display_id ILIKE '%' || $3 || '%')
+  AND (NOT $4::boolean OR COALESCE(stats.late, 0) > 0)
 `
 
 type CountSearchProjectsParams struct {
 	SuperAdmin bool
 	UserID     uuid.UUID
 	Query      string
+	LateOnly   bool
 }
 
 func (q *Queries) CountSearchProjects(ctx context.Context, arg CountSearchProjectsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countSearchProjects, arg.SuperAdmin, arg.UserID, arg.Query)
+	row := q.db.QueryRow(ctx, countSearchProjects,
+		arg.SuperAdmin,
+		arg.UserID,
+		arg.Query,
+		arg.LateOnly,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -257,20 +292,61 @@ func (q *Queries) ListProjectMembers(ctx context.Context, projectID uuid.UUID) (
 }
 
 const listProjects = `-- name: ListProjects :many
+WITH stats AS (
+    SELECT project_id,
+           COUNT(*) FILTER (WHERE status = 'not_started') AS not_started,
+           COUNT(*) FILTER (WHERE status = 'in_progress') AS in_progress,
+           COUNT(*) FILTER (WHERE status = 'done') AS done,
+           COUNT(*) FILTER (WHERE (status = 'not_started' AND planned_start_date < CURRENT_DATE)
+                              OR (status = 'in_progress' AND planned_end_date < CURRENT_DATE)) AS late
+    FROM tasks
+    GROUP BY project_id
+), members AS (
+    SELECT project_id, COUNT(*) AS member_count FROM project_members GROUP BY project_id
+)
 SELECT p.id, p.display_id, p.name, p.description, p.planned_start_date, p.planned_end_date,
        p.created_at, p.updated_at,
-       EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $1) AS is_admin
+       EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $1) AS is_admin,
+       COALESCE(members.member_count, 0) AS member_count,
+       COALESCE(stats.not_started, 0) AS not_started,
+       COALESCE(stats.in_progress, 0) AS in_progress,
+       COALESCE(stats.done, 0) AS done,
+       COALESCE(stats.late, 0) AS late,
+       CASE WHEN COALESCE(stats.not_started, 0) + COALESCE(stats.in_progress, 0) + COALESCE(stats.done, 0) = 0 THEN 0
+            ELSE ROUND(COALESCE(stats.done, 0) * 100.0 / (COALESCE(stats.not_started, 0) + COALESCE(stats.in_progress, 0) + COALESCE(stats.done, 0)), 2)
+       END::float8 AS progress
 FROM projects p
-WHERE $2::boolean
-   OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $1)
-ORDER BY p.created_at DESC
-LIMIT $4
-OFFSET $3
+LEFT JOIN stats ON stats.project_id = p.id
+LEFT JOIN members ON members.project_id = p.id
+WHERE ($2::boolean
+   OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $1))
+  AND (NOT $3::boolean OR COALESCE(stats.late, 0) > 0)
+ORDER BY
+  CASE WHEN $4::text = 'name' AND $5::text = 'asc' THEN p.name END ASC,
+  CASE WHEN $4::text = 'name' AND $5::text = 'desc' THEN p.name END DESC,
+  CASE WHEN $4::text = 'start_date' AND $5::text = 'asc' THEN p.planned_start_date END ASC,
+  CASE WHEN $4::text = 'start_date' AND $5::text = 'desc' THEN p.planned_start_date END DESC,
+  CASE WHEN $4::text = 'progress' AND $5::text = 'asc' THEN
+       CASE WHEN COALESCE(stats.not_started, 0) + COALESCE(stats.in_progress, 0) + COALESCE(stats.done, 0) = 0 THEN 0
+            ELSE COALESCE(stats.done, 0)::float8 / (COALESCE(stats.not_started, 0) + COALESCE(stats.in_progress, 0) + COALESCE(stats.done, 0)) END
+  END ASC,
+  CASE WHEN $4::text = 'progress' AND $5::text = 'desc' THEN
+       CASE WHEN COALESCE(stats.not_started, 0) + COALESCE(stats.in_progress, 0) + COALESCE(stats.done, 0) = 0 THEN 0
+            ELSE COALESCE(stats.done, 0)::float8 / (COALESCE(stats.not_started, 0) + COALESCE(stats.in_progress, 0) + COALESCE(stats.done, 0)) END
+  END DESC,
+  CASE WHEN $4::text = 'late' AND $5::text = 'asc' THEN COALESCE(stats.late, 0) END ASC,
+  CASE WHEN $4::text = 'late' AND $5::text = 'desc' THEN COALESCE(stats.late, 0) END DESC,
+  p.created_at DESC
+LIMIT $7
+OFFSET $6
 `
 
 type ListProjectsParams struct {
 	UserID     uuid.UUID
 	SuperAdmin bool
+	LateOnly   bool
+	SortBy     string
+	SortDir    string
 	PageOffset int32
 	PageLimit  int32
 }
@@ -285,12 +361,21 @@ type ListProjectsRow struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	IsAdmin          bool
+	MemberCount      int64
+	NotStarted       int64
+	InProgress       int64
+	Done             int64
+	Late             int64
+	Progress         float64
 }
 
 func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]ListProjectsRow, error) {
 	rows, err := q.db.Query(ctx, listProjects,
 		arg.UserID,
 		arg.SuperAdmin,
+		arg.LateOnly,
+		arg.SortBy,
+		arg.SortDir,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -311,6 +396,12 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]L
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.IsAdmin,
+			&i.MemberCount,
+			&i.NotStarted,
+			&i.InProgress,
+			&i.Done,
+			&i.Late,
+			&i.Progress,
 		); err != nil {
 			return nil, err
 		}
@@ -346,6 +437,49 @@ func (q *Queries) LockProjectAdmins(ctx context.Context, projectID uuid.UUID) ([
 	return items, nil
 }
 
+const projectBlockedCounts = `-- name: ProjectBlockedCounts :many
+WITH RECURSIVE reach AS (
+    SELECT t.id AS task_id, t.project_id, td.depends_on AS upstream
+    FROM tasks t
+    JOIN task_dependencies td ON td.task_id = t.id
+    WHERE t.project_id = ANY($1::uuid[])
+    UNION
+    SELECT r.task_id, r.project_id, td.depends_on
+    FROM task_dependencies td
+    JOIN reach r ON td.task_id = r.upstream
+)
+SELECT r.project_id, COUNT(DISTINCT r.task_id) AS blocked
+FROM reach r
+JOIN tasks u ON u.id = r.upstream
+WHERE u.status <> 'done'
+GROUP BY r.project_id
+`
+
+type ProjectBlockedCountsRow struct {
+	ProjectID uuid.UUID
+	Blocked   int64
+}
+
+func (q *Queries) ProjectBlockedCounts(ctx context.Context, projectIds []uuid.UUID) ([]ProjectBlockedCountsRow, error) {
+	rows, err := q.db.Query(ctx, projectBlockedCounts, projectIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectBlockedCountsRow{}
+	for rows.Next() {
+		var i ProjectBlockedCountsRow
+		if err := rows.Scan(&i.ProjectID, &i.Blocked); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const removeProjectMember = `-- name: RemoveProjectMember :execrows
 DELETE FROM project_members WHERE project_id = $1 AND user_id = $2
 `
@@ -364,25 +498,49 @@ func (q *Queries) RemoveProjectMember(ctx context.Context, arg RemoveProjectMemb
 }
 
 const searchProjects = `-- name: SearchProjects :many
+WITH stats AS (
+    SELECT project_id,
+           COUNT(*) FILTER (WHERE status = 'not_started') AS not_started,
+           COUNT(*) FILTER (WHERE status = 'in_progress') AS in_progress,
+           COUNT(*) FILTER (WHERE status = 'done') AS done,
+           COUNT(*) FILTER (WHERE (status = 'not_started' AND planned_start_date < CURRENT_DATE)
+                              OR (status = 'in_progress' AND planned_end_date < CURRENT_DATE)) AS late
+    FROM tasks
+    GROUP BY project_id
+), members AS (
+    SELECT project_id, COUNT(*) AS member_count FROM project_members GROUP BY project_id
+)
 SELECT p.id, p.display_id, p.name, p.description, p.planned_start_date, p.planned_end_date,
        p.created_at, p.updated_at,
        ts_rank_cd(p.search, websearch_to_tsquery('english', $1)) AS rank,
-       EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $2) AS is_admin
+       EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $2) AS is_admin,
+       COALESCE(members.member_count, 0) AS member_count,
+       COALESCE(stats.not_started, 0) AS not_started,
+       COALESCE(stats.in_progress, 0) AS in_progress,
+       COALESCE(stats.done, 0) AS done,
+       COALESCE(stats.late, 0) AS late,
+       CASE WHEN COALESCE(stats.not_started, 0) + COALESCE(stats.in_progress, 0) + COALESCE(stats.done, 0) = 0 THEN 0
+            ELSE ROUND(COALESCE(stats.done, 0) * 100.0 / (COALESCE(stats.not_started, 0) + COALESCE(stats.in_progress, 0) + COALESCE(stats.done, 0)), 2)
+       END::float8 AS progress
 FROM projects p
+LEFT JOIN stats ON stats.project_id = p.id
+LEFT JOIN members ON members.project_id = p.id
 WHERE ($3::boolean
    OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $2))
   AND (p.search @@ websearch_to_tsquery('english', $1)
    OR p.name ILIKE '%' || $1 || '%'
    OR p.display_id ILIKE '%' || $1 || '%')
+  AND (NOT $4::boolean OR COALESCE(stats.late, 0) > 0)
 ORDER BY rank DESC, p.created_at DESC
-LIMIT $5
-OFFSET $4
+LIMIT $6
+OFFSET $5
 `
 
 type SearchProjectsParams struct {
 	Query      string
 	UserID     uuid.UUID
 	SuperAdmin bool
+	LateOnly   bool
 	PageOffset int32
 	PageLimit  int32
 }
@@ -398,6 +556,12 @@ type SearchProjectsRow struct {
 	UpdatedAt        time.Time
 	Rank             float32
 	IsAdmin          bool
+	MemberCount      int64
+	NotStarted       int64
+	InProgress       int64
+	Done             int64
+	Late             int64
+	Progress         float64
 }
 
 func (q *Queries) SearchProjects(ctx context.Context, arg SearchProjectsParams) ([]SearchProjectsRow, error) {
@@ -405,6 +569,7 @@ func (q *Queries) SearchProjects(ctx context.Context, arg SearchProjectsParams) 
 		arg.Query,
 		arg.UserID,
 		arg.SuperAdmin,
+		arg.LateOnly,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -426,6 +591,12 @@ func (q *Queries) SearchProjects(ctx context.Context, arg SearchProjectsParams) 
 			&i.UpdatedAt,
 			&i.Rank,
 			&i.IsAdmin,
+			&i.MemberCount,
+			&i.NotStarted,
+			&i.InProgress,
+			&i.Done,
+			&i.Late,
+			&i.Progress,
 		); err != nil {
 			return nil, err
 		}

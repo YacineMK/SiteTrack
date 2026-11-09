@@ -33,6 +33,13 @@ type Project struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	IsAdmin          bool
+	MemberCount      int64
+	NotStarted       int64
+	InProgress       int64
+	Done             int64
+	LateCount        int64
+	Progress         float64
+	BlockedCount     int64
 }
 
 type Member struct {
@@ -78,8 +85,8 @@ type OutboxEvent struct {
 type Repository interface {
 	Create(ctx context.Context, project Project, adminID uuid.UUID) (Project, error)
 	GetByDisplayID(ctx context.Context, displayID string) (Project, error)
-	List(ctx context.Context, userID uuid.UUID, superAdmin bool, limit, offset int32) ([]Project, int64, error)
-	Search(ctx context.Context, userID uuid.UUID, superAdmin bool, query string, limit, offset int32) ([]Project, int64, error)
+	List(ctx context.Context, userID uuid.UUID, superAdmin, lateOnly bool, sortBy, sortDir string, limit, offset int32) ([]Project, int64, error)
+	Search(ctx context.Context, userID uuid.UUID, superAdmin, lateOnly bool, query string, limit, offset int32) ([]Project, int64, error)
 	Update(ctx context.Context, displayID, name, description string, start, end time.Time) (Project, error)
 	Delete(ctx context.Context, displayID string) (int64, error)
 	ProjectAccess(ctx context.Context, displayID string, userID uuid.UUID) (uuid.UUID, bool, bool, bool, error)
@@ -146,10 +153,11 @@ func (r *PostgresRepository) GetByDisplayID(ctx context.Context, displayID strin
 	return toProject(row.ID, row.DisplayID, row.Name, row.Description, row.PlannedStartDate, row.PlannedEndDate, row.CreatedAt, row.UpdatedAt, false), nil
 }
 
-func (r *PostgresRepository) List(ctx context.Context, userID uuid.UUID, superAdmin bool, limit, offset int32) ([]Project, int64, error) {
+func (r *PostgresRepository) List(ctx context.Context, userID uuid.UUID, superAdmin, lateOnly bool, sortBy, sortDir string, limit, offset int32) ([]Project, int64, error) {
 	total, err := r.queries.CountProjects(ctx, sqlc.CountProjectsParams{
 		UserID:     userID,
 		SuperAdmin: superAdmin,
+		LateOnly:   lateOnly,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -158,6 +166,7 @@ func (r *PostgresRepository) List(ctx context.Context, userID uuid.UUID, superAd
 	rows, err := r.queries.ListProjects(ctx, sqlc.ListProjectsParams{
 		UserID:     userID,
 		SuperAdmin: superAdmin,
+		LateOnly:   lateOnly,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -167,16 +176,20 @@ func (r *PostgresRepository) List(ctx context.Context, userID uuid.UUID, superAd
 
 	projects := make([]Project, 0, len(rows))
 	for _, row := range rows {
-		projects = append(projects, toProject(row.ID, row.DisplayID, row.Name, row.Description, row.PlannedStartDate, row.PlannedEndDate, row.CreatedAt, row.UpdatedAt, row.IsAdmin))
+		projects = append(projects, toListProject(row))
+	}
+	if err := r.fillBlockedCounts(ctx, projects); err != nil {
+		return nil, 0, err
 	}
 	return projects, total, nil
 }
 
-func (r *PostgresRepository) Search(ctx context.Context, userID uuid.UUID, superAdmin bool, query string, limit, offset int32) ([]Project, int64, error) {
+func (r *PostgresRepository) Search(ctx context.Context, userID uuid.UUID, superAdmin, lateOnly bool, query string, limit, offset int32) ([]Project, int64, error) {
 	total, err := r.queries.CountSearchProjects(ctx, sqlc.CountSearchProjectsParams{
 		Query:      query,
 		UserID:     userID,
 		SuperAdmin: superAdmin,
+		LateOnly:   lateOnly,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -186,6 +199,7 @@ func (r *PostgresRepository) Search(ctx context.Context, userID uuid.UUID, super
 		Query:      query,
 		UserID:     userID,
 		SuperAdmin: superAdmin,
+		LateOnly:   lateOnly,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -195,9 +209,34 @@ func (r *PostgresRepository) Search(ctx context.Context, userID uuid.UUID, super
 
 	projects := make([]Project, 0, len(rows))
 	for _, row := range rows {
-		projects = append(projects, toProject(row.ID, row.DisplayID, row.Name, row.Description, row.PlannedStartDate, row.PlannedEndDate, row.CreatedAt, row.UpdatedAt, row.IsAdmin))
+		projects = append(projects, toSearchProject(row))
+	}
+	if err := r.fillBlockedCounts(ctx, projects); err != nil {
+		return nil, 0, err
 	}
 	return projects, total, nil
+}
+
+func (r *PostgresRepository) fillBlockedCounts(ctx context.Context, projects []Project) error {
+	if len(projects) == 0 {
+		return nil
+	}
+	ids := make([]uuid.UUID, 0, len(projects))
+	for _, project := range projects {
+		ids = append(ids, project.ID)
+	}
+	rows, err := r.queries.ProjectBlockedCounts(ctx, ids)
+	if err != nil {
+		return err
+	}
+	counts := make(map[uuid.UUID]int64, len(rows))
+	for _, row := range rows {
+		counts[row.ProjectID] = row.Blocked
+	}
+	for i := range projects {
+		projects[i].BlockedCount = counts[projects[i].ID]
+	}
+	return nil
 }
 
 func (r *PostgresRepository) Update(ctx context.Context, displayID, name, description string, start, end time.Time) (Project, error) {
@@ -496,5 +535,45 @@ func toProject(id uuid.UUID, displayID, name, description string, start, end, cr
 		CreatedAt:        createdAt,
 		UpdatedAt:        updatedAt,
 		IsAdmin:          isAdmin,
+	}
+}
+
+func toListProject(row sqlc.ListProjectsRow) Project {
+	return Project{
+		ID:               row.ID,
+		DisplayID:        row.DisplayID,
+		Name:             row.Name,
+		Description:      row.Description,
+		PlannedStartDate: row.PlannedStartDate,
+		PlannedEndDate:   row.PlannedEndDate,
+		CreatedAt:        row.CreatedAt,
+		UpdatedAt:        row.UpdatedAt,
+		IsAdmin:          row.IsAdmin,
+		MemberCount:      row.MemberCount,
+		NotStarted:       row.NotStarted,
+		InProgress:       row.InProgress,
+		Done:             row.Done,
+		LateCount:        row.Late,
+		Progress:         row.Progress,
+	}
+}
+
+func toSearchProject(row sqlc.SearchProjectsRow) Project {
+	return Project{
+		ID:               row.ID,
+		DisplayID:        row.DisplayID,
+		Name:             row.Name,
+		Description:      row.Description,
+		PlannedStartDate: row.PlannedStartDate,
+		PlannedEndDate:   row.PlannedEndDate,
+		CreatedAt:        row.CreatedAt,
+		UpdatedAt:        row.UpdatedAt,
+		IsAdmin:          row.IsAdmin,
+		MemberCount:      row.MemberCount,
+		NotStarted:       row.NotStarted,
+		InProgress:       row.InProgress,
+		Done:             row.Done,
+		LateCount:        row.Late,
+		Progress:         row.Progress,
 	}
 }
