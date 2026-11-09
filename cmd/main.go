@@ -8,6 +8,7 @@ import (
 	"github.com/YacineMK/SiteTrack/internal/app"
 	"github.com/YacineMK/SiteTrack/internal/database"
 	"github.com/YacineMK/SiteTrack/kit/config"
+	kitjwt "github.com/YacineMK/SiteTrack/kit/jwt"
 	kitredis "github.com/YacineMK/SiteTrack/kit/redis"
 )
 
@@ -42,7 +43,8 @@ func main() {
 	}
 	defer redis.Close()
 
-	a := app.New(cfg.Port, postgres, redis)
+	jwtManager := kitjwt.New(cfg.JWTSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
+	a := app.New(cfg.Port, postgres, redis, jwtManager)
 
 	log.Printf("listening on %s", cfg.Port)
 	if err := a.Run(); err != nil {

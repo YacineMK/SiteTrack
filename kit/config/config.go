@@ -11,7 +11,8 @@ import (
 type Config struct {
 	Port                 string
 	JWTSecret            string
-	JWTTTL               time.Duration
+	JWTAccessTTL         time.Duration
+	JWTRefreshTTL        time.Duration
 	DatabaseURL          string
 	DBMaxConns           int32
 	DBMinConns           int32
@@ -32,7 +33,8 @@ func Load() Config {
 	return Config{
 		Port:                 getEnv("PORT", ":8080"),
 		JWTSecret:            getEnv("JWT_SECRET", "placeholder"),
-		JWTTTL:               getEnvDuration("JWT_TTL", 24*time.Hour),
+		JWTAccessTTL:         getEnvDuration("JWT_ACCESS_TTL", 15*time.Minute),
+		JWTRefreshTTL:        getEnvDuration("JWT_REFRESH_TTL", 7*24*time.Hour),
 		DatabaseURL:          getEnv("DATABASE_URL", "postgres://sitetrack:sitetrack@localhost:5432/sitetrack?sslmode=disable"),
 		DBMaxConns:           int32(getEnvInt("DB_MAX_CONNS", 10)),
 		DBMinConns:           int32(getEnvInt("DB_MIN_CONNS", 2)),
