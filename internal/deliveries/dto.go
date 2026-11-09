@@ -65,17 +65,19 @@ type DeliveryLineResponse struct {
 }
 
 type DeliveryResponse struct {
-	ID           uuid.UUID              `json:"id"`
-	SenderType   string                 `json:"sender_type"`
-	SenderID     *uuid.UUID             `json:"sender_id"`
-	ReceiverType string                 `json:"receiver_type"`
-	ReceiverID   *uuid.UUID             `json:"receiver_id"`
-	Status       string                 `json:"status"`
-	SentAt       time.Time              `json:"sent_at"`
-	ReceivedAt   *time.Time             `json:"received_at"`
-	SentBy       *uuid.UUID             `json:"sent_by"`
-	ReceivedBy   *uuid.UUID             `json:"received_by"`
-	Lines        []DeliveryLineResponse `json:"lines,omitempty"`
+	ID             uuid.UUID              `json:"id"`
+	SenderType     string                 `json:"sender_type"`
+	SenderID       *uuid.UUID             `json:"sender_id"`
+	ReceiverType   string                 `json:"receiver_type"`
+	ReceiverID     *uuid.UUID             `json:"receiver_id"`
+	Status         string                 `json:"status"`
+	SentAt         time.Time              `json:"sent_at"`
+	ReceivedAt     *time.Time             `json:"received_at"`
+	SentBy         *uuid.UUID             `json:"sent_by"`
+	ReceivedBy     *uuid.UUID             `json:"received_by"`
+	SentByName     string                 `json:"sent_by_name,omitempty"`
+	ReceivedByName string                 `json:"received_by_name,omitempty"`
+	Lines          []DeliveryLineResponse `json:"lines,omitempty"`
 }
 
 type ListDeliveriesResponse struct {

@@ -37,24 +37,26 @@ type Line struct {
 }
 
 type Delivery struct {
-	ID           uuid.UUID
-	SenderType   string
-	SenderID     *uuid.UUID
-	ReceiverType string
-	ReceiverID   *uuid.UUID
-	Status       string
-	SentAt       time.Time
-	ReceivedAt   *time.Time
-	SentBy       *uuid.UUID
-	ReceivedBy   *uuid.UUID
-	Lines        []Line
+	ID             uuid.UUID
+	SenderType     string
+	SenderID       *uuid.UUID
+	ReceiverType   string
+	ReceiverID     *uuid.UUID
+	Status         string
+	SentAt         time.Time
+	ReceivedAt     *time.Time
+	SentBy         *uuid.UUID
+	ReceivedBy     *uuid.UUID
+	SentByName     string
+	ReceivedByName string
+	Lines          []Line
 }
 
 type Repository interface {
 	Create(ctx context.Context, delivery Delivery) (Delivery, error)
 	Get(ctx context.Context, id uuid.UUID) (Delivery, error)
-	ListCompany(ctx context.Context, status, query string, limit, offset int32) ([]Delivery, int64, error)
-	ListProject(ctx context.Context, projectID uuid.UUID, status, query string, limit, offset int32) ([]Delivery, int64, error)
+	ListCompany(ctx context.Context, status, query, direction, fromDate, toDate string, projectID uuid.UUID, limit, offset int32) ([]Delivery, int64, error)
+	ListProject(ctx context.Context, projectID uuid.UUID, status, query, direction, fromDate, toDate string, limit, offset int32) ([]Delivery, int64, error)
 	Transition(ctx context.Context, id uuid.UUID, status string, receivedBy *uuid.UUID) (Delivery, error)
 }
 
@@ -164,14 +166,25 @@ func (r *PostgresRepository) Get(ctx context.Context, id uuid.UUID) (Delivery, e
 	return delivery, nil
 }
 
-func (r *PostgresRepository) ListCompany(ctx context.Context, status, query string, limit, offset int32) ([]Delivery, int64, error) {
-	total, err := r.queries.CountCompanyDeliveries(ctx, sqlc.CountCompanyDeliveriesParams{StatusFilter: status, Query: query})
+func (r *PostgresRepository) ListCompany(ctx context.Context, status, query, direction, fromDate, toDate string, projectID uuid.UUID, limit, offset int32) ([]Delivery, int64, error) {
+	total, err := r.queries.CountCompanyDeliveries(ctx, sqlc.CountCompanyDeliveriesParams{
+		Direction:    direction,
+		ProjectID:    projectID,
+		StatusFilter: status,
+		FromDate:     fromDate,
+		ToDate:       toDate,
+		Query:        query,
+	})
 	if err != nil {
 		return nil, 0, err
 	}
 
 	rows, err := r.queries.ListCompanyDeliveries(ctx, sqlc.ListCompanyDeliveriesParams{
+		Direction:    direction,
+		ProjectID:    projectID,
 		StatusFilter: status,
+		FromDate:     fromDate,
+		ToDate:       toDate,
 		Query:        query,
 		PageLimit:    limit,
 		PageOffset:   offset,
@@ -180,13 +193,16 @@ func (r *PostgresRepository) ListCompany(ctx context.Context, status, query stri
 		return nil, 0, err
 	}
 
-	return toDeliveries(rows), total, nil
+	return toCompanyDeliveries(rows), total, nil
 }
 
-func (r *PostgresRepository) ListProject(ctx context.Context, projectID uuid.UUID, status, query string, limit, offset int32) ([]Delivery, int64, error) {
+func (r *PostgresRepository) ListProject(ctx context.Context, projectID uuid.UUID, status, query, direction, fromDate, toDate string, limit, offset int32) ([]Delivery, int64, error) {
 	total, err := r.queries.CountProjectDeliveries(ctx, sqlc.CountProjectDeliveriesParams{
 		ProjectID:    projectID,
+		Direction:    direction,
 		StatusFilter: status,
+		FromDate:     fromDate,
+		ToDate:       toDate,
 		Query:        query,
 	})
 	if err != nil {
@@ -195,7 +211,10 @@ func (r *PostgresRepository) ListProject(ctx context.Context, projectID uuid.UUI
 
 	rows, err := r.queries.ListProjectDeliveries(ctx, sqlc.ListProjectDeliveriesParams{
 		ProjectID:    projectID,
+		Direction:    direction,
 		StatusFilter: status,
+		FromDate:     fromDate,
+		ToDate:       toDate,
 		Query:        query,
 		PageLimit:    limit,
 		PageOffset:   offset,
@@ -204,7 +223,7 @@ func (r *PostgresRepository) ListProject(ctx context.Context, projectID uuid.UUI
 		return nil, 0, err
 	}
 
-	return toDeliveries(rows), total, nil
+	return toProjectDeliveries(rows), total, nil
 }
 
 func (r *PostgresRepository) Transition(ctx context.Context, id uuid.UUID, status string, receivedBy *uuid.UUID) (Delivery, error) {
@@ -281,10 +300,44 @@ func creditStock(ctx context.Context, q *sqlc.Queries, partyType string, partyID
 	return nil
 }
 
-func toDeliveries(rows []sqlc.Delivery) []Delivery {
+func toCompanyDeliveries(rows []sqlc.ListCompanyDeliveriesRow) []Delivery {
 	deliveries := make([]Delivery, 0, len(rows))
 	for _, row := range rows {
-		deliveries = append(deliveries, toDelivery(row))
+		deliveries = append(deliveries, Delivery{
+			ID:             row.ID,
+			SenderType:     string(row.SenderType),
+			SenderID:       fromPgUUID(row.SenderID),
+			ReceiverType:   string(row.ReceiverType),
+			ReceiverID:     fromPgUUID(row.ReceiverID),
+			Status:         string(row.Status),
+			SentAt:         row.SentAt,
+			ReceivedAt:     fromPgTime(row.ReceivedAt),
+			SentBy:         fromPgUUID(row.SentBy),
+			ReceivedBy:     fromPgUUID(row.ReceivedBy),
+			SentByName:     row.SentByName,
+			ReceivedByName: row.ReceivedByName,
+		})
+	}
+	return deliveries
+}
+
+func toProjectDeliveries(rows []sqlc.ListProjectDeliveriesRow) []Delivery {
+	deliveries := make([]Delivery, 0, len(rows))
+	for _, row := range rows {
+		deliveries = append(deliveries, Delivery{
+			ID:             row.ID,
+			SenderType:     string(row.SenderType),
+			SenderID:       fromPgUUID(row.SenderID),
+			ReceiverType:   string(row.ReceiverType),
+			ReceiverID:     fromPgUUID(row.ReceiverID),
+			Status:         string(row.Status),
+			SentAt:         row.SentAt,
+			ReceivedAt:     fromPgTime(row.ReceivedAt),
+			SentBy:         fromPgUUID(row.SentBy),
+			ReceivedBy:     fromPgUUID(row.ReceivedBy),
+			SentByName:     row.SentByName,
+			ReceivedByName: row.ReceivedByName,
+		})
 	}
 	return deliveries
 }

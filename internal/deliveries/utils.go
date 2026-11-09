@@ -36,17 +36,19 @@ func (u utils) ToResponse(delivery Delivery) DeliveryResponse {
 	}
 
 	return DeliveryResponse{
-		ID:           delivery.ID,
-		SenderType:   delivery.SenderType,
-		SenderID:     delivery.SenderID,
-		ReceiverType: delivery.ReceiverType,
-		ReceiverID:   delivery.ReceiverID,
-		Status:       delivery.Status,
-		SentAt:       delivery.SentAt,
-		ReceivedAt:   delivery.ReceivedAt,
-		SentBy:       delivery.SentBy,
-		ReceivedBy:   delivery.ReceivedBy,
-		Lines:        lines,
+		ID:             delivery.ID,
+		SenderType:     delivery.SenderType,
+		SenderID:       delivery.SenderID,
+		ReceiverType:   delivery.ReceiverType,
+		ReceiverID:     delivery.ReceiverID,
+		Status:         delivery.Status,
+		SentAt:         delivery.SentAt,
+		ReceivedAt:     delivery.ReceivedAt,
+		SentBy:         delivery.SentBy,
+		ReceivedBy:     delivery.ReceivedBy,
+		SentByName:     delivery.SentByName,
+		ReceivedByName: delivery.ReceivedByName,
+		Lines:          lines,
 	}
 }
 

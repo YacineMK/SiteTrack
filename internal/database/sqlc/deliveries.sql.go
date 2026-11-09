@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -49,17 +50,36 @@ const countCompanyDeliveries = `-- name: CountCompanyDeliveries :one
 SELECT COUNT(*)
 FROM deliveries d
 WHERE (d.sender_type = 'company' OR d.receiver_type = 'company')
-  AND ($1::text = '' OR d.status::text = $1::text)
-  AND ($2::text = '' OR d.id::text ILIKE '%' || $2::text || '%' OR EXISTS (SELECT 1 FROM delivery_lines dl JOIN materials m ON m.id = dl.material_id WHERE dl.delivery_id = d.id AND m.name ILIKE '%' || $2::text || '%') OR EXISTS (SELECT 1 FROM projects p WHERE (p.id = d.sender_id OR p.id = d.receiver_id) AND p.display_id ILIKE '%' || $2::text || '%'))
+  AND ($1::text = ''
+    OR ($1::text = 'out' AND d.sender_type = 'company')
+    OR ($1::text = 'in' AND d.receiver_type = 'company'))
+  AND ($2::uuid = '00000000-0000-0000-0000-000000000000'::uuid
+    OR (d.sender_type = 'project' AND d.sender_id = $2::uuid)
+    OR (d.receiver_type = 'project' AND d.receiver_id = $2::uuid))
+  AND ($3::text = '' OR d.status::text = $3::text)
+  AND (NULLIF($4::text, '')::date IS NULL OR d.sent_at >= NULLIF($4::text, '')::date)
+  AND (NULLIF($5::text, '')::date IS NULL OR d.sent_at < NULLIF($5::text, '')::date + 1)
+  AND ($6::text = '' OR d.id::text ILIKE '%' || $6::text || '%' OR EXISTS (SELECT 1 FROM delivery_lines dl JOIN materials m ON m.id = dl.material_id WHERE dl.delivery_id = d.id AND m.name ILIKE '%' || $6::text || '%') OR EXISTS (SELECT 1 FROM projects p WHERE (p.id = d.sender_id OR p.id = d.receiver_id) AND p.display_id ILIKE '%' || $6::text || '%'))
 `
 
 type CountCompanyDeliveriesParams struct {
+	Direction    string
+	ProjectID    uuid.UUID
 	StatusFilter string
+	FromDate     string
+	ToDate       string
 	Query        string
 }
 
 func (q *Queries) CountCompanyDeliveries(ctx context.Context, arg CountCompanyDeliveriesParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countCompanyDeliveries, arg.StatusFilter, arg.Query)
+	row := q.db.QueryRow(ctx, countCompanyDeliveries,
+		arg.Direction,
+		arg.ProjectID,
+		arg.StatusFilter,
+		arg.FromDate,
+		arg.ToDate,
+		arg.Query,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -69,18 +89,33 @@ const countProjectDeliveries = `-- name: CountProjectDeliveries :one
 SELECT COUNT(*)
 FROM deliveries d
 WHERE ((d.sender_type = 'project' AND d.sender_id = $1::uuid) OR (d.receiver_type = 'project' AND d.receiver_id = $1::uuid))
-  AND ($2::text = '' OR d.status::text = $2::text)
-  AND ($3::text = '' OR d.id::text ILIKE '%' || $3::text || '%' OR EXISTS (SELECT 1 FROM delivery_lines dl JOIN materials m ON m.id = dl.material_id WHERE dl.delivery_id = d.id AND m.name ILIKE '%' || $3::text || '%') OR EXISTS (SELECT 1 FROM projects p WHERE (p.id = d.sender_id OR p.id = d.receiver_id) AND p.display_id ILIKE '%' || $3::text || '%'))
+  AND ($2::text = ''
+    OR ($2::text = 'out' AND d.sender_type = 'project' AND d.sender_id = $1::uuid)
+    OR ($2::text = 'in' AND d.receiver_type = 'project' AND d.receiver_id = $1::uuid))
+  AND ($3::text = '' OR d.status::text = $3::text)
+  AND (NULLIF($4::text, '')::date IS NULL OR d.sent_at >= NULLIF($4::text, '')::date)
+  AND (NULLIF($5::text, '')::date IS NULL OR d.sent_at < NULLIF($5::text, '')::date + 1)
+  AND ($6::text = '' OR d.id::text ILIKE '%' || $6::text || '%' OR EXISTS (SELECT 1 FROM delivery_lines dl JOIN materials m ON m.id = dl.material_id WHERE dl.delivery_id = d.id AND m.name ILIKE '%' || $6::text || '%') OR EXISTS (SELECT 1 FROM projects p WHERE (p.id = d.sender_id OR p.id = d.receiver_id) AND p.display_id ILIKE '%' || $6::text || '%'))
 `
 
 type CountProjectDeliveriesParams struct {
 	ProjectID    uuid.UUID
+	Direction    string
 	StatusFilter string
+	FromDate     string
+	ToDate       string
 	Query        string
 }
 
 func (q *Queries) CountProjectDeliveries(ctx context.Context, arg CountProjectDeliveriesParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countProjectDeliveries, arg.ProjectID, arg.StatusFilter, arg.Query)
+	row := q.db.QueryRow(ctx, countProjectDeliveries,
+		arg.ProjectID,
+		arg.Direction,
+		arg.StatusFilter,
+		arg.FromDate,
+		arg.ToDate,
+		arg.Query,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -213,25 +248,60 @@ func (q *Queries) GetDeliveryLines(ctx context.Context, deliveryID uuid.UUID) ([
 }
 
 const listCompanyDeliveries = `-- name: ListCompanyDeliveries :many
-SELECT d.id, d.sender_type, d.sender_id, d.receiver_type, d.receiver_id, d.status, d.sent_at, d.received_at, d.sent_by, d.received_by
+SELECT d.id, d.sender_type, d.sender_id, d.receiver_type, d.receiver_id, d.status, d.sent_at, d.received_at, d.sent_by, d.received_by,
+       COALESCE(su.name, '')::text AS sent_by_name,
+       COALESCE(ru.name, '')::text AS received_by_name
 FROM deliveries d
+LEFT JOIN users su ON su.id = d.sent_by
+LEFT JOIN users ru ON ru.id = d.received_by
 WHERE (d.sender_type = 'company' OR d.receiver_type = 'company')
-  AND ($1::text = '' OR d.status::text = $1::text)
-  AND ($2::text = '' OR d.id::text ILIKE '%' || $2::text || '%' OR EXISTS (SELECT 1 FROM delivery_lines dl JOIN materials m ON m.id = dl.material_id WHERE dl.delivery_id = d.id AND m.name ILIKE '%' || $2::text || '%') OR EXISTS (SELECT 1 FROM projects p WHERE (p.id = d.sender_id OR p.id = d.receiver_id) AND p.display_id ILIKE '%' || $2::text || '%'))
+  AND ($1::text = ''
+    OR ($1::text = 'out' AND d.sender_type = 'company')
+    OR ($1::text = 'in' AND d.receiver_type = 'company'))
+  AND ($2::uuid = '00000000-0000-0000-0000-000000000000'::uuid
+    OR (d.sender_type = 'project' AND d.sender_id = $2::uuid)
+    OR (d.receiver_type = 'project' AND d.receiver_id = $2::uuid))
+  AND ($3::text = '' OR d.status::text = $3::text)
+  AND (NULLIF($4::text, '')::date IS NULL OR d.sent_at >= NULLIF($4::text, '')::date)
+  AND (NULLIF($5::text, '')::date IS NULL OR d.sent_at < NULLIF($5::text, '')::date + 1)
+  AND ($6::text = '' OR d.id::text ILIKE '%' || $6::text || '%' OR EXISTS (SELECT 1 FROM delivery_lines dl JOIN materials m ON m.id = dl.material_id WHERE dl.delivery_id = d.id AND m.name ILIKE '%' || $6::text || '%') OR EXISTS (SELECT 1 FROM projects p WHERE (p.id = d.sender_id OR p.id = d.receiver_id) AND p.display_id ILIKE '%' || $6::text || '%'))
 ORDER BY d.sent_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $8 OFFSET $7
 `
 
 type ListCompanyDeliveriesParams struct {
+	Direction    string
+	ProjectID    uuid.UUID
 	StatusFilter string
+	FromDate     string
+	ToDate       string
 	Query        string
 	PageOffset   int32
 	PageLimit    int32
 }
 
-func (q *Queries) ListCompanyDeliveries(ctx context.Context, arg ListCompanyDeliveriesParams) ([]Delivery, error) {
+type ListCompanyDeliveriesRow struct {
+	ID             uuid.UUID
+	SenderType     DeliveryParty
+	SenderID       pgtype.UUID
+	ReceiverType   DeliveryParty
+	ReceiverID     pgtype.UUID
+	Status         DeliveryStatus
+	SentAt         time.Time
+	ReceivedAt     pgtype.Timestamptz
+	SentBy         pgtype.UUID
+	ReceivedBy     pgtype.UUID
+	SentByName     string
+	ReceivedByName string
+}
+
+func (q *Queries) ListCompanyDeliveries(ctx context.Context, arg ListCompanyDeliveriesParams) ([]ListCompanyDeliveriesRow, error) {
 	rows, err := q.db.Query(ctx, listCompanyDeliveries,
+		arg.Direction,
+		arg.ProjectID,
 		arg.StatusFilter,
+		arg.FromDate,
+		arg.ToDate,
 		arg.Query,
 		arg.PageOffset,
 		arg.PageLimit,
@@ -240,9 +310,9 @@ func (q *Queries) ListCompanyDeliveries(ctx context.Context, arg ListCompanyDeli
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Delivery{}
+	items := []ListCompanyDeliveriesRow{}
 	for rows.Next() {
-		var i Delivery
+		var i ListCompanyDeliveriesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SenderType,
@@ -254,6 +324,8 @@ func (q *Queries) ListCompanyDeliveries(ctx context.Context, arg ListCompanyDeli
 			&i.ReceivedAt,
 			&i.SentBy,
 			&i.ReceivedBy,
+			&i.SentByName,
+			&i.ReceivedByName,
 		); err != nil {
 			return nil, err
 		}
@@ -266,27 +338,57 @@ func (q *Queries) ListCompanyDeliveries(ctx context.Context, arg ListCompanyDeli
 }
 
 const listProjectDeliveries = `-- name: ListProjectDeliveries :many
-SELECT d.id, d.sender_type, d.sender_id, d.receiver_type, d.receiver_id, d.status, d.sent_at, d.received_at, d.sent_by, d.received_by
+SELECT d.id, d.sender_type, d.sender_id, d.receiver_type, d.receiver_id, d.status, d.sent_at, d.received_at, d.sent_by, d.received_by,
+       COALESCE(su.name, '')::text AS sent_by_name,
+       COALESCE(ru.name, '')::text AS received_by_name
 FROM deliveries d
+LEFT JOIN users su ON su.id = d.sent_by
+LEFT JOIN users ru ON ru.id = d.received_by
 WHERE ((d.sender_type = 'project' AND d.sender_id = $1::uuid) OR (d.receiver_type = 'project' AND d.receiver_id = $1::uuid))
-  AND ($2::text = '' OR d.status::text = $2::text)
-  AND ($3::text = '' OR d.id::text ILIKE '%' || $3::text || '%' OR EXISTS (SELECT 1 FROM delivery_lines dl JOIN materials m ON m.id = dl.material_id WHERE dl.delivery_id = d.id AND m.name ILIKE '%' || $3::text || '%') OR EXISTS (SELECT 1 FROM projects p WHERE (p.id = d.sender_id OR p.id = d.receiver_id) AND p.display_id ILIKE '%' || $3::text || '%'))
+  AND ($2::text = ''
+    OR ($2::text = 'out' AND d.sender_type = 'project' AND d.sender_id = $1::uuid)
+    OR ($2::text = 'in' AND d.receiver_type = 'project' AND d.receiver_id = $1::uuid))
+  AND ($3::text = '' OR d.status::text = $3::text)
+  AND (NULLIF($4::text, '')::date IS NULL OR d.sent_at >= NULLIF($4::text, '')::date)
+  AND (NULLIF($5::text, '')::date IS NULL OR d.sent_at < NULLIF($5::text, '')::date + 1)
+  AND ($6::text = '' OR d.id::text ILIKE '%' || $6::text || '%' OR EXISTS (SELECT 1 FROM delivery_lines dl JOIN materials m ON m.id = dl.material_id WHERE dl.delivery_id = d.id AND m.name ILIKE '%' || $6::text || '%') OR EXISTS (SELECT 1 FROM projects p WHERE (p.id = d.sender_id OR p.id = d.receiver_id) AND p.display_id ILIKE '%' || $6::text || '%'))
 ORDER BY d.sent_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $8 OFFSET $7
 `
 
 type ListProjectDeliveriesParams struct {
 	ProjectID    uuid.UUID
+	Direction    string
 	StatusFilter string
+	FromDate     string
+	ToDate       string
 	Query        string
 	PageOffset   int32
 	PageLimit    int32
 }
 
-func (q *Queries) ListProjectDeliveries(ctx context.Context, arg ListProjectDeliveriesParams) ([]Delivery, error) {
+type ListProjectDeliveriesRow struct {
+	ID             uuid.UUID
+	SenderType     DeliveryParty
+	SenderID       pgtype.UUID
+	ReceiverType   DeliveryParty
+	ReceiverID     pgtype.UUID
+	Status         DeliveryStatus
+	SentAt         time.Time
+	ReceivedAt     pgtype.Timestamptz
+	SentBy         pgtype.UUID
+	ReceivedBy     pgtype.UUID
+	SentByName     string
+	ReceivedByName string
+}
+
+func (q *Queries) ListProjectDeliveries(ctx context.Context, arg ListProjectDeliveriesParams) ([]ListProjectDeliveriesRow, error) {
 	rows, err := q.db.Query(ctx, listProjectDeliveries,
 		arg.ProjectID,
+		arg.Direction,
 		arg.StatusFilter,
+		arg.FromDate,
+		arg.ToDate,
 		arg.Query,
 		arg.PageOffset,
 		arg.PageLimit,
@@ -295,9 +397,9 @@ func (q *Queries) ListProjectDeliveries(ctx context.Context, arg ListProjectDeli
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Delivery{}
+	items := []ListProjectDeliveriesRow{}
 	for rows.Next() {
-		var i Delivery
+		var i ListProjectDeliveriesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SenderType,
@@ -309,6 +411,8 @@ func (q *Queries) ListProjectDeliveries(ctx context.Context, arg ListProjectDeli
 			&i.ReceivedAt,
 			&i.SentBy,
 			&i.ReceivedBy,
+			&i.SentByName,
+			&i.ReceivedByName,
 		); err != nil {
 			return nil, err
 		}
