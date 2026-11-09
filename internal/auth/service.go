@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	validation "github.com/go-ozzo/ozzo-validation/v4"
+	"github.com/go-ozzo/ozzo-validation/v4/is"
 	"github.com/google/uuid"
 
 	"github.com/YacineMK/SiteTrack/kit/hash"
@@ -32,6 +34,7 @@ type Service interface {
 	Refresh(ctx context.Context, refreshToken string) (Session, error)
 	Logout(ctx context.Context, accessToken, refreshToken string) error
 	Me(ctx context.Context, userID uuid.UUID) (UserResponse, error)
+	EmailAvailable(ctx context.Context, email string) (bool, error)
 	ValidateAccessToken(ctx context.Context, accessToken string) (*kitjwt.Claims, error)
 }
 
@@ -194,6 +197,19 @@ func (s *service) Me(ctx context.Context, userID uuid.UUID) (UserResponse, error
 		return UserResponse{}, err
 	}
 	return s.utils.ToUserResponse(user), nil
+}
+
+func (s *service) EmailAvailable(ctx context.Context, email string) (bool, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if err := validation.Validate(email, validation.Required, is.Email); err != nil {
+		return false, ErrInvalidInput
+	}
+
+	exists, err := s.repo.ExistsByEmail(ctx, email)
+	if err != nil {
+		return false, err
+	}
+	return !exists, nil
 }
 
 func (s *service) ValidateAccessToken(ctx context.Context, accessToken string) (*kitjwt.Claims, error) {

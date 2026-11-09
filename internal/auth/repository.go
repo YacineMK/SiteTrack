@@ -32,6 +32,7 @@ type Repository interface {
 	Create(ctx context.Context, user User) (User, error)
 	GetByEmail(ctx context.Context, email string) (User, error)
 	GetByID(ctx context.Context, id uuid.UUID) (User, error)
+	ExistsByEmail(ctx context.Context, email string) (bool, error)
 }
 
 type PostgresRepository struct {
@@ -79,6 +80,10 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id uuid.UUID) (User, e
 		return User{}, err
 	}
 	return toUser(row), nil
+}
+
+func (r *PostgresRepository) ExistsByEmail(ctx context.Context, email string) (bool, error) {
+	return r.queries.EmailExists(ctx, email)
 }
 
 func toUser(row sqlc.User) User {

@@ -70,6 +70,20 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	jsonutil.JSON(w, http.StatusOK, h.utils.AuthResponse(session))
 }
 
+func (h *Handler) EmailAvailable(w http.ResponseWriter, r *http.Request) {
+	available, err := h.svc.EmailAvailable(r.Context(), r.URL.Query().Get("email"))
+	if err != nil {
+		if errors.Is(err, ErrInvalidInput) {
+			jsonutil.Error(w, http.StatusBadRequest, "invalid email")
+			return
+		}
+		jsonutil.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	jsonutil.JSON(w, http.StatusOK, map[string]bool{"available": available})
+}
+
 func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(refreshCookieName)
 	if err != nil || cookie.Value == "" {
