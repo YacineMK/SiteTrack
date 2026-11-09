@@ -182,6 +182,13 @@ type ProjectIDCounter struct {
 	LastValue int64
 }
 
+type ProjectMember struct {
+	ProjectID uuid.UUID
+	UserID    uuid.UUID
+	IsAdmin   bool
+	CreatedAt time.Time
+}
+
 type ProjectStoreStock struct {
 	ProjectID  uuid.UUID
 	MaterialID uuid.UUID

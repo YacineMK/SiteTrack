@@ -12,12 +12,36 @@ import (
 	"github.com/google/uuid"
 )
 
-const countProjects = `-- name: CountProjects :one
-SELECT COUNT(*) FROM projects
+const addProjectMember = `-- name: AddProjectMember :exec
+INSERT INTO project_members (project_id, user_id, is_admin)
+VALUES ($1, $2, $3)
 `
 
-func (q *Queries) CountProjects(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countProjects)
+type AddProjectMemberParams struct {
+	ProjectID uuid.UUID
+	UserID    uuid.UUID
+	IsAdmin   bool
+}
+
+func (q *Queries) AddProjectMember(ctx context.Context, arg AddProjectMemberParams) error {
+	_, err := q.db.Exec(ctx, addProjectMember, arg.ProjectID, arg.UserID, arg.IsAdmin)
+	return err
+}
+
+const countProjects = `-- name: CountProjects :one
+SELECT COUNT(*)
+FROM projects p
+WHERE $1::boolean
+   OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $2)
+`
+
+type CountProjectsParams struct {
+	SuperAdmin bool
+	UserID     uuid.UUID
+}
+
+func (q *Queries) CountProjects(ctx context.Context, arg CountProjectsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countProjects, arg.SuperAdmin, arg.UserID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -26,13 +50,21 @@ func (q *Queries) CountProjects(ctx context.Context) (int64, error) {
 const countSearchProjects = `-- name: CountSearchProjects :one
 SELECT COUNT(*)
 FROM projects p
-WHERE p.search @@ websearch_to_tsquery('english', $1)
-   OR p.name ILIKE '%' || $1 || '%'
-   OR p.display_id ILIKE '%' || $1 || '%'
+WHERE ($1::boolean
+   OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $2))
+  AND (p.search @@ websearch_to_tsquery('english', $3)
+   OR p.name ILIKE '%' || $3 || '%'
+   OR p.display_id ILIKE '%' || $3 || '%')
 `
 
-func (q *Queries) CountSearchProjects(ctx context.Context, query string) (int64, error) {
-	row := q.db.QueryRow(ctx, countSearchProjects, query)
+type CountSearchProjectsParams struct {
+	SuperAdmin bool
+	UserID     uuid.UUID
+	Query      string
+}
+
+func (q *Queries) CountSearchProjects(ctx context.Context, arg CountSearchProjectsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countSearchProjects, arg.SuperAdmin, arg.UserID, arg.Query)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -132,15 +164,79 @@ func (q *Queries) GetProjectByDisplayID(ctx context.Context, displayID string) (
 	return i, err
 }
 
+const getProjectMembership = `-- name: GetProjectMembership :one
+SELECT is_admin FROM project_members WHERE project_id = $1 AND user_id = $2
+`
+
+type GetProjectMembershipParams struct {
+	ProjectID uuid.UUID
+	UserID    uuid.UUID
+}
+
+func (q *Queries) GetProjectMembership(ctx context.Context, arg GetProjectMembershipParams) (bool, error) {
+	row := q.db.QueryRow(ctx, getProjectMembership, arg.ProjectID, arg.UserID)
+	var is_admin bool
+	err := row.Scan(&is_admin)
+	return is_admin, err
+}
+
+const listProjectMembers = `-- name: ListProjectMembers :many
+SELECT pm.user_id, u.name, u.email, pm.is_admin, pm.created_at
+FROM project_members pm
+JOIN users u ON u.id = pm.user_id
+WHERE pm.project_id = $1
+ORDER BY pm.created_at, u.name
+`
+
+type ListProjectMembersRow struct {
+	UserID    uuid.UUID
+	Name      string
+	Email     string
+	IsAdmin   bool
+	CreatedAt time.Time
+}
+
+func (q *Queries) ListProjectMembers(ctx context.Context, projectID uuid.UUID) ([]ListProjectMembersRow, error) {
+	rows, err := q.db.Query(ctx, listProjectMembers, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectMembersRow{}
+	for rows.Next() {
+		var i ListProjectMembersRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Name,
+			&i.Email,
+			&i.IsAdmin,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProjects = `-- name: ListProjects :many
-SELECT id, display_id, name, description, planned_start_date, planned_end_date, created_at, updated_at
-FROM projects
-ORDER BY created_at DESC
-LIMIT $2
-OFFSET $1
+SELECT p.id, p.display_id, p.name, p.description, p.planned_start_date, p.planned_end_date,
+       p.created_at, p.updated_at,
+       EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $1) AS is_admin
+FROM projects p
+WHERE $2::boolean
+   OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $1)
+ORDER BY p.created_at DESC
+LIMIT $4
+OFFSET $3
 `
 
 type ListProjectsParams struct {
+	UserID     uuid.UUID
+	SuperAdmin bool
 	PageOffset int32
 	PageLimit  int32
 }
@@ -154,10 +250,16 @@ type ListProjectsRow struct {
 	PlannedEndDate   time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	IsAdmin          bool
 }
 
 func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]ListProjectsRow, error) {
-	rows, err := q.db.Query(ctx, listProjects, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listProjects,
+		arg.UserID,
+		arg.SuperAdmin,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -174,6 +276,7 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]L
 			&i.PlannedEndDate,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.IsAdmin,
 		); err != nil {
 			return nil, err
 		}
@@ -185,21 +288,67 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]L
 	return items, nil
 }
 
+const lockProjectAdmins = `-- name: LockProjectAdmins :many
+SELECT user_id FROM project_members WHERE project_id = $1 AND is_admin FOR UPDATE
+`
+
+func (q *Queries) LockProjectAdmins(ctx context.Context, projectID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, lockProjectAdmins, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var user_id uuid.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const removeProjectMember = `-- name: RemoveProjectMember :execrows
+DELETE FROM project_members WHERE project_id = $1 AND user_id = $2
+`
+
+type RemoveProjectMemberParams struct {
+	ProjectID uuid.UUID
+	UserID    uuid.UUID
+}
+
+func (q *Queries) RemoveProjectMember(ctx context.Context, arg RemoveProjectMemberParams) (int64, error) {
+	result, err := q.db.Exec(ctx, removeProjectMember, arg.ProjectID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const searchProjects = `-- name: SearchProjects :many
 SELECT p.id, p.display_id, p.name, p.description, p.planned_start_date, p.planned_end_date,
        p.created_at, p.updated_at,
-       ts_rank_cd(p.search, websearch_to_tsquery('english', $1)) AS rank
+       ts_rank_cd(p.search, websearch_to_tsquery('english', $1)) AS rank,
+       EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $2) AS is_admin
 FROM projects p
-WHERE p.search @@ websearch_to_tsquery('english', $1)
+WHERE ($3::boolean
+   OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $2))
+  AND (p.search @@ websearch_to_tsquery('english', $1)
    OR p.name ILIKE '%' || $1 || '%'
-   OR p.display_id ILIKE '%' || $1 || '%'
+   OR p.display_id ILIKE '%' || $1 || '%')
 ORDER BY rank DESC, p.created_at DESC
-LIMIT $3
-OFFSET $2
+LIMIT $5
+OFFSET $4
 `
 
 type SearchProjectsParams struct {
 	Query      string
+	UserID     uuid.UUID
+	SuperAdmin bool
 	PageOffset int32
 	PageLimit  int32
 }
@@ -214,10 +363,17 @@ type SearchProjectsRow struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	Rank             float32
+	IsAdmin          bool
 }
 
 func (q *Queries) SearchProjects(ctx context.Context, arg SearchProjectsParams) ([]SearchProjectsRow, error) {
-	rows, err := q.db.Query(ctx, searchProjects, arg.Query, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, searchProjects,
+		arg.Query,
+		arg.UserID,
+		arg.SuperAdmin,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -235,6 +391,7 @@ func (q *Queries) SearchProjects(ctx context.Context, arg SearchProjectsParams) 
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Rank,
+			&i.IsAdmin,
 		); err != nil {
 			return nil, err
 		}
@@ -244,6 +401,24 @@ func (q *Queries) SearchProjects(ctx context.Context, arg SearchProjectsParams) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const setProjectMemberAdmin = `-- name: SetProjectMemberAdmin :execrows
+UPDATE project_members SET is_admin = $3 WHERE project_id = $1 AND user_id = $2
+`
+
+type SetProjectMemberAdminParams struct {
+	ProjectID uuid.UUID
+	UserID    uuid.UUID
+	IsAdmin   bool
+}
+
+func (q *Queries) SetProjectMemberAdmin(ctx context.Context, arg SetProjectMemberAdminParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setProjectMemberAdmin, arg.ProjectID, arg.UserID, arg.IsAdmin)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateProject = `-- name: UpdateProject :one
