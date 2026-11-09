@@ -35,26 +35,6 @@ func (r LoginRequest) Validate() error {
 	)
 }
 
-type RefreshRequest struct {
-	RefreshToken string `json:"refresh_token"`
-}
-
-func (r RefreshRequest) Validate() error {
-	return validation.ValidateStruct(&r,
-		validation.Field(&r.RefreshToken, validation.Required),
-	)
-}
-
-type LogoutRequest struct {
-	RefreshToken string `json:"refresh_token"`
-}
-
-func (r LogoutRequest) Validate() error {
-	return validation.ValidateStruct(&r,
-		validation.Field(&r.RefreshToken, validation.Required),
-	)
-}
-
 type UserResponse struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
@@ -65,9 +45,6 @@ type UserResponse struct {
 }
 
 type AuthResponse struct {
-	AccessToken  string       `json:"access_token"`
-	RefreshToken string       `json:"refresh_token"`
-	TokenType    string       `json:"token_type"`
-	ExpiresIn    int64        `json:"expires_in"`
-	User         UserResponse `json:"user"`
+	ExpiresIn int64        `json:"expires_in"`
+	User      UserResponse `json:"user"`
 }

@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	Port                 string
+	CookieSecure         bool
 	JWTSecret            string
 	JWTAccessTTL         time.Duration
 	JWTRefreshTTL        time.Duration
@@ -32,6 +33,7 @@ func Load() Config {
 
 	return Config{
 		Port:                 getEnv("PORT", ":8080"),
+		CookieSecure:         getEnvBool("COOKIE_SECURE", false),
 		JWTSecret:            getEnv("JWT_SECRET", "placeholder"),
 		JWTAccessTTL:         getEnvDuration("JWT_ACCESS_TTL", 15*time.Minute),
 		JWTRefreshTTL:        getEnvDuration("JWT_REFRESH_TTL", 7*24*time.Hour),
@@ -70,6 +72,15 @@ func getEnvDuration(key string, fallback time.Duration) time.Duration {
 	if value := os.Getenv(key); value != "" {
 		if d, err := time.ParseDuration(value); err == nil {
 			return d
+		}
+	}
+	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	if value := os.Getenv(key); value != "" {
+		if b, err := strconv.ParseBool(value); err == nil {
+			return b
 		}
 	}
 	return fallback

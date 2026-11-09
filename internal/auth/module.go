@@ -8,13 +8,14 @@ import (
 )
 
 type Dependencies struct {
-	DB    *pgxpool.Pool
-	Redis *kitredis.Redis
-	JWT   *kitjwt.Manager
+	DB           *pgxpool.Pool
+	Redis        *kitredis.Redis
+	JWT          *kitjwt.Manager
+	CookieSecure bool
 }
 
 func New(deps Dependencies) *Handler {
 	repo := NewPostgresRepository(deps.DB)
 	svc := NewService(repo, deps.JWT, NewRedisBlacklist(deps.Redis))
-	return NewHandler(svc)
+	return NewHandler(svc, deps.CookieSecure)
 }
