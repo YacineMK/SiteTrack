@@ -39,7 +39,7 @@ type Task struct {
 type Repository interface {
 	Create(ctx context.Context, task Task) (Task, error)
 	Get(ctx context.Context, projectID uuid.UUID, displayID string) (Task, error)
-	List(ctx context.Context, projectID uuid.UUID, limit, offset int32) ([]Task, int64, error)
+	List(ctx context.Context, projectID uuid.UUID, query string, limit, offset int32) ([]Task, int64, error)
 	Update(ctx context.Context, projectID uuid.UUID, displayID, name string, start, end time.Time) (Task, error)
 	UpdateStatus(ctx context.Context, projectID uuid.UUID, displayID, status string) (Task, error)
 	Delete(ctx context.Context, projectID uuid.UUID, displayID string) (int64, error)
@@ -89,14 +89,18 @@ func (r *PostgresRepository) Get(ctx context.Context, projectID uuid.UUID, displ
 	return toTask(row), nil
 }
 
-func (r *PostgresRepository) List(ctx context.Context, projectID uuid.UUID, limit, offset int32) ([]Task, int64, error) {
-	total, err := r.queries.CountTasks(ctx, projectID)
+func (r *PostgresRepository) List(ctx context.Context, projectID uuid.UUID, query string, limit, offset int32) ([]Task, int64, error) {
+	total, err := r.queries.CountTasks(ctx, sqlc.CountTasksParams{
+		ProjectID: projectID,
+		Query:     query,
+	})
 	if err != nil {
 		return nil, 0, err
 	}
 
 	rows, err := r.queries.ListTasks(ctx, sqlc.ListTasksParams{
 		ProjectID:  projectID,
+		Query:      query,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})

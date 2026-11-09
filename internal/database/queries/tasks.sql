@@ -12,12 +12,13 @@ WHERE project_id = $1 AND display_id = $2;
 SELECT id, display_id, project_id, name, planned_start_date, planned_end_date, status, created_at, updated_at
 FROM tasks
 WHERE project_id = $1
+  AND (sqlc.arg(query)::text = '' OR name ILIKE '%' || sqlc.arg(query)::text || '%' OR display_id ILIKE '%' || sqlc.arg(query)::text || '%')
 ORDER BY display_id
 LIMIT sqlc.arg(page_limit)
 OFFSET sqlc.arg(page_offset);
 
 -- name: CountTasks :one
-SELECT COUNT(*) FROM tasks WHERE project_id = $1;
+SELECT COUNT(*) FROM tasks WHERE project_id = $1 AND (sqlc.arg(query)::text = '' OR name ILIKE '%' || sqlc.arg(query)::text || '%' OR display_id ILIKE '%' || sqlc.arg(query)::text || '%');
 
 -- name: UpdateTask :one
 UPDATE tasks

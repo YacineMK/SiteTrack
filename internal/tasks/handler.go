@@ -42,7 +42,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tasks, err := h.svc.List(r.Context(), chi.URLParam(r, "project_display_id"), limit, offset)
+	tasks, err := h.svc.List(r.Context(), chi.URLParam(r, "project_display_id"), r.URL.Query().Get("q"), limit, offset)
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return

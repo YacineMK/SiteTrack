@@ -28,7 +28,7 @@ var (
 type Service interface {
 	Create(ctx context.Context, projectDisplayID string, req CreateTaskRequest) (TaskResponse, error)
 	Get(ctx context.Context, projectDisplayID, taskDisplayID string) (TaskDetailResponse, error)
-	List(ctx context.Context, projectDisplayID string, limit, offset int32) (ListTasksResponse, error)
+	List(ctx context.Context, projectDisplayID, query string, limit, offset int32) (ListTasksResponse, error)
 	Update(ctx context.Context, projectDisplayID, taskDisplayID string, req UpdateTaskRequest) (TaskResponse, error)
 	Delete(ctx context.Context, projectDisplayID, taskDisplayID string) error
 	Start(ctx context.Context, projectDisplayID, taskDisplayID string) (TaskResponse, error)
@@ -117,7 +117,7 @@ func (s *service) Get(ctx context.Context, projectDisplayID, taskDisplayID strin
 	return s.utils.ToDetailResponse(task, project.DisplayID, upstream, downstream, blocked), nil
 }
 
-func (s *service) List(ctx context.Context, projectDisplayID string, limit, offset int32) (ListTasksResponse, error) {
+func (s *service) List(ctx context.Context, projectDisplayID, query string, limit, offset int32) (ListTasksResponse, error) {
 	project, err := s.projects.GetByDisplayID(ctx, projectDisplayID)
 	if err != nil {
 		return ListTasksResponse{}, err
@@ -125,7 +125,7 @@ func (s *service) List(ctx context.Context, projectDisplayID string, limit, offs
 
 	limit, offset = s.utils.NormalizePagination(limit, offset)
 
-	tasks, total, err := s.repo.List(ctx, project.ID, limit, offset)
+	tasks, total, err := s.repo.List(ctx, project.ID, query, limit, offset)
 	if err != nil {
 		return ListTasksResponse{}, err
 	}

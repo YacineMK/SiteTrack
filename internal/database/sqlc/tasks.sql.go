@@ -37,11 +37,16 @@ func (q *Queries) AddTaskDependency(ctx context.Context, arg AddTaskDependencyPa
 }
 
 const countTasks = `-- name: CountTasks :one
-SELECT COUNT(*) FROM tasks WHERE project_id = $1
+SELECT COUNT(*) FROM tasks WHERE project_id = $1 AND ($2::text = '' OR name ILIKE '%' || $2::text || '%' OR display_id ILIKE '%' || $2::text || '%')
 `
 
-func (q *Queries) CountTasks(ctx context.Context, projectID uuid.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countTasks, projectID)
+type CountTasksParams struct {
+	ProjectID uuid.UUID
+	Query     string
+}
+
+func (q *Queries) CountTasks(ctx context.Context, arg CountTasksParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTasks, arg.ProjectID, arg.Query)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -216,19 +221,26 @@ const listTasks = `-- name: ListTasks :many
 SELECT id, display_id, project_id, name, planned_start_date, planned_end_date, status, created_at, updated_at
 FROM tasks
 WHERE project_id = $1
+  AND ($2::text = '' OR name ILIKE '%' || $2::text || '%' OR display_id ILIKE '%' || $2::text || '%')
 ORDER BY display_id
-LIMIT $3
-OFFSET $2
+LIMIT $4
+OFFSET $3
 `
 
 type ListTasksParams struct {
 	ProjectID  uuid.UUID
+	Query      string
 	PageOffset int32
 	PageLimit  int32
 }
 
 func (q *Queries) ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, error) {
-	rows, err := q.db.Query(ctx, listTasks, arg.ProjectID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listTasks,
+		arg.ProjectID,
+		arg.Query,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
