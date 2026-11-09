@@ -103,6 +103,7 @@ type AppRole struct {
 	ID          uuid.UUID
 	Name        string
 	Description string
+	IsSystem    bool
 }
 
 type CompanyStoreStock struct {
@@ -225,4 +226,5 @@ type User struct {
 	TokenVersion int32
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	RoleID       uuid.UUID
 }

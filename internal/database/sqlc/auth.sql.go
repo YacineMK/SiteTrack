@@ -7,13 +7,14 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (id, name, email, password_hash, app_role)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO users (id, name, email, password_hash, app_role, role_id)
+VALUES ($1, $2, $3, $4, $5, (SELECT id FROM app_roles WHERE name = $5))
 RETURNING id, name, email, password_hash, app_role, token_version, created_at, updated_at
 `
 
@@ -25,7 +26,18 @@ type CreateUserParams struct {
 	AppRole      string
 }
 
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
+type CreateUserRow struct {
+	ID           uuid.UUID
+	Name         string
+	Email        string
+	PasswordHash string
+	AppRole      string
+	TokenVersion int32
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
 	row := q.db.QueryRow(ctx, createUser,
 		arg.ID,
 		arg.Name,
@@ -33,7 +45,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.PasswordHash,
 		arg.AppRole,
 	)
-	var i User
+	var i CreateUserRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -59,14 +71,26 @@ func (q *Queries) EmailExists(ctx context.Context, email string) (bool, error) {
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, name, email, password_hash, app_role, token_version, created_at, updated_at
-FROM users
-WHERE email = $1
+SELECT u.id, u.name, u.email, u.password_hash, ar.name AS app_role, u.token_version, u.created_at, u.updated_at
+FROM users u
+JOIN app_roles ar ON ar.id = u.role_id
+WHERE u.email = $1
 `
 
-func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
+type GetUserByEmailRow struct {
+	ID           uuid.UUID
+	Name         string
+	Email        string
+	PasswordHash string
+	AppRole      string
+	TokenVersion int32
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error) {
 	row := q.db.QueryRow(ctx, getUserByEmail, email)
-	var i User
+	var i GetUserByEmailRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -81,14 +105,26 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, name, email, password_hash, app_role, token_version, created_at, updated_at
-FROM users
-WHERE id = $1
+SELECT u.id, u.name, u.email, u.password_hash, ar.name AS app_role, u.token_version, u.created_at, u.updated_at
+FROM users u
+JOIN app_roles ar ON ar.id = u.role_id
+WHERE u.id = $1
 `
 
-func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
+type GetUserByIDRow struct {
+	ID           uuid.UUID
+	Name         string
+	Email        string
+	PasswordHash string
+	AppRole      string
+	TokenVersion int32
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow, error) {
 	row := q.db.QueryRow(ctx, getUserByID, id)
-	var i User
+	var i GetUserByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,

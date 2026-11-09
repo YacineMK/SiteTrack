@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -27,10 +28,50 @@ func (q *Queries) AddRolePolicy(ctx context.Context, arg AddRolePolicyParams) er
 	return err
 }
 
+const assignUserRole = `-- name: AssignUserRole :one
+UPDATE users
+SET role_id = (SELECT ar.id FROM app_roles ar WHERE ar.name = $1),
+    app_role = $1,
+    token_version = token_version + 1,
+    updated_at = NOW()
+WHERE users.id = $2
+RETURNING id, name, email, app_role, token_version, created_at, updated_at
+`
+
+type AssignUserRoleParams struct {
+	RoleName string
+	UserID   uuid.UUID
+}
+
+type AssignUserRoleRow struct {
+	ID           uuid.UUID
+	Name         string
+	Email        string
+	AppRole      string
+	TokenVersion int32
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+func (q *Queries) AssignUserRole(ctx context.Context, arg AssignUserRoleParams) (AssignUserRoleRow, error) {
+	row := q.db.QueryRow(ctx, assignUserRole, arg.RoleName, arg.UserID)
+	var i AssignUserRoleRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Email,
+		&i.AppRole,
+		&i.TokenVersion,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createRole = `-- name: CreateRole :one
 INSERT INTO app_roles (name, description)
 VALUES ($1, $2)
-RETURNING id, name, description
+RETURNING id, name, description, is_system
 `
 
 type CreateRoleParams struct {
@@ -41,7 +82,12 @@ type CreateRoleParams struct {
 func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (AppRole, error) {
 	row := q.db.QueryRow(ctx, createRole, arg.Name, arg.Description)
 	var i AppRole
-	err := row.Scan(&i.ID, &i.Name, &i.Description)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.IsSystem,
+	)
 	return i, err
 }
 
@@ -64,8 +110,40 @@ func (q *Queries) DeleteRolePolicy(ctx context.Context, arg DeleteRolePolicyPara
 	return result.RowsAffected(), nil
 }
 
+const getPoliciesByRoleName = `-- name: GetPoliciesByRoleName :many
+SELECT rp.resource, rp.action
+FROM role_policies rp
+JOIN app_roles ar ON ar.id = rp.role_id
+WHERE ar.name = $1
+`
+
+type GetPoliciesByRoleNameRow struct {
+	Resource string
+	Action   string
+}
+
+func (q *Queries) GetPoliciesByRoleName(ctx context.Context, name string) ([]GetPoliciesByRoleNameRow, error) {
+	rows, err := q.db.Query(ctx, getPoliciesByRoleName, name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetPoliciesByRoleNameRow{}
+	for rows.Next() {
+		var i GetPoliciesByRoleNameRow
+		if err := rows.Scan(&i.Resource, &i.Action); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getRoleByID = `-- name: GetRoleByID :one
-SELECT id, name, description
+SELECT id, name, description, is_system
 FROM app_roles
 WHERE id = $1
 `
@@ -73,7 +151,30 @@ WHERE id = $1
 func (q *Queries) GetRoleByID(ctx context.Context, id uuid.UUID) (AppRole, error) {
 	row := q.db.QueryRow(ctx, getRoleByID, id)
 	var i AppRole
-	err := row.Scan(&i.ID, &i.Name, &i.Description)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.IsSystem,
+	)
+	return i, err
+}
+
+const getRoleByName = `-- name: GetRoleByName :one
+SELECT id, name, description, is_system
+FROM app_roles
+WHERE name = $1
+`
+
+func (q *Queries) GetRoleByName(ctx context.Context, name string) (AppRole, error) {
+	row := q.db.QueryRow(ctx, getRoleByName, name)
+	var i AppRole
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.IsSystem,
+	)
 	return i, err
 }
 
@@ -105,7 +206,7 @@ func (q *Queries) ListRolePolicies(ctx context.Context, roleID uuid.UUID) ([]Rol
 }
 
 const listRoles = `-- name: ListRoles :many
-SELECT id, name, description
+SELECT id, name, description, is_system
 FROM app_roles
 ORDER BY name
 `
@@ -119,7 +220,12 @@ func (q *Queries) ListRoles(ctx context.Context) ([]AppRole, error) {
 	items := []AppRole{}
 	for rows.Next() {
 		var i AppRole
-		if err := rows.Scan(&i.ID, &i.Name, &i.Description); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.IsSystem,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -128,4 +234,37 @@ func (q *Queries) ListRoles(ctx context.Context) ([]AppRole, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const upsertRole = `-- name: UpsertRole :exec
+INSERT INTO app_roles (name, description, is_system)
+VALUES ($1, $2, TRUE)
+ON CONFLICT (name) DO UPDATE SET is_system = TRUE
+`
+
+type UpsertRoleParams struct {
+	Name        string
+	Description string
+}
+
+func (q *Queries) UpsertRole(ctx context.Context, arg UpsertRoleParams) error {
+	_, err := q.db.Exec(ctx, upsertRole, arg.Name, arg.Description)
+	return err
+}
+
+const upsertRolePolicy = `-- name: UpsertRolePolicy :exec
+INSERT INTO role_policies (role_id, resource, action)
+SELECT ar.id, $2, $3 FROM app_roles ar WHERE ar.name = $1
+ON CONFLICT DO NOTHING
+`
+
+type UpsertRolePolicyParams struct {
+	Name     string
+	Resource string
+	Action   string
+}
+
+func (q *Queries) UpsertRolePolicy(ctx context.Context, arg UpsertRolePolicyParams) error {
+	_, err := q.db.Exec(ctx, upsertRolePolicy, arg.Name, arg.Resource, arg.Action)
+	return err
 }
