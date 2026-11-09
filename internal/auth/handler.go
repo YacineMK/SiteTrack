@@ -61,6 +61,51 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	jsonutil.JSON(w, http.StatusOK, auth)
 }
 
+func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
+	var req RefreshRequest
+	if err := jsonutil.DecodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	auth, err := h.svc.Refresh(r.Context(), req)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrUnauthorized):
+			writeUnauthorized(w)
+		case errors.Is(err, ErrInvalidInput):
+			writeError(w, http.StatusBadRequest, "invalid input")
+		default:
+			writeError(w, http.StatusInternalServerError, "internal server error")
+		}
+		return
+	}
+
+	jsonutil.JSON(w, http.StatusOK, auth)
+}
+
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	var req LogoutRequest
+	if err := jsonutil.DecodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.svc.Logout(r.Context(), bearerToken(r), req); err != nil {
+		switch {
+		case errors.Is(err, ErrUnauthorized):
+			writeUnauthorized(w)
+		case errors.Is(err, ErrInvalidInput):
+			writeError(w, http.StatusBadRequest, "invalid input")
+		default:
+			writeError(w, http.StatusInternalServerError, "internal server error")
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	userID, ok := UserID(r.Context())
 	if !ok {

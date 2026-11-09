@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -273,4 +274,218 @@ func TestAuthenticateRejectsMalformedToken(t *testing.T) {
 	if _, err := svc.Authenticate(context.Background(), "not-a-token"); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("Authenticate() error = %v, want ErrUnauthorized", err)
 	}
+}
+
+func loginAlice(t *testing.T, svc *Service) AuthResponse {
+	t.Helper()
+	resp, err := svc.Login(context.Background(), LoginRequest{
+		Email:    "alice@example.com",
+		Password: "password123",
+	})
+	if err != nil {
+		t.Fatalf("Login() error = %v", err)
+	}
+	return resp
+}
+
+func TestRefreshRotatesTokens(t *testing.T) {
+	svc, _, _, manager := newTestService()
+	registerAlice(t, svc)
+	login := loginAlice(t, svc)
+
+	refreshed, err := svc.Refresh(context.Background(), RefreshRequest{RefreshToken: login.RefreshToken})
+	if err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if refreshed.AccessToken == login.AccessToken || refreshed.RefreshToken == login.RefreshToken {
+		t.Fatal("Refresh() must issue a new token pair")
+	}
+	if _, err := svc.Authenticate(context.Background(), refreshed.AccessToken); err != nil {
+		t.Fatalf("new access token rejected: %v", err)
+	}
+	if _, err := manager.ParseRefresh(refreshed.RefreshToken); err != nil {
+		t.Fatalf("new refresh token invalid: %v", err)
+	}
+
+	if _, err := svc.Refresh(context.Background(), RefreshRequest{RefreshToken: login.RefreshToken}); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("reusing a rotated refresh token: error = %v, want ErrUnauthorized", err)
+	}
+}
+
+func TestRefreshRejectsAccessToken(t *testing.T) {
+	svc, _, _, _ := newTestService()
+	registerAlice(t, svc)
+	login := loginAlice(t, svc)
+
+	if _, err := svc.Refresh(context.Background(), RefreshRequest{RefreshToken: login.AccessToken}); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("Refresh(access token) error = %v, want ErrUnauthorized", err)
+	}
+}
+
+func TestRefreshRejectsMissingToken(t *testing.T) {
+	svc, _, _, _ := newTestService()
+
+	if _, err := svc.Refresh(context.Background(), RefreshRequest{}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("Refresh(empty) error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestRefreshRejectsStaleTokenVersion(t *testing.T) {
+	svc, repo, _, _ := newTestService()
+	user := registerAlice(t, svc)
+	login := loginAlice(t, svc)
+
+	id, err := uuid.Parse(user.ID)
+	if err != nil {
+		t.Fatalf("parsing user ID: %v", err)
+	}
+	if err := repo.IncrementTokenVersion(context.Background(), id); err != nil {
+		t.Fatalf("IncrementTokenVersion() error = %v", err)
+	}
+
+	if _, err := svc.Refresh(context.Background(), RefreshRequest{RefreshToken: login.RefreshToken}); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("Refresh() error = %v, want ErrUnauthorized", err)
+	}
+}
+
+func TestLogoutRevokesSession(t *testing.T) {
+	svc, _, _, _ := newTestService()
+	registerAlice(t, svc)
+	login := loginAlice(t, svc)
+
+	err := svc.Logout(context.Background(), login.AccessToken, LogoutRequest{RefreshToken: login.RefreshToken})
+	if err != nil {
+		t.Fatalf("Logout() error = %v", err)
+	}
+
+	if _, err := svc.Authenticate(context.Background(), login.AccessToken); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("access token after logout: error = %v, want ErrUnauthorized", err)
+	}
+	if _, err := svc.Refresh(context.Background(), RefreshRequest{RefreshToken: login.RefreshToken}); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("refresh token after logout: error = %v, want ErrUnauthorized", err)
+	}
+}
+
+func TestLogoutRejectsMismatchedTokens(t *testing.T) {
+	svc, _, _, _ := newTestService()
+	registerAlice(t, svc)
+	login := loginAlice(t, svc)
+
+	if _, err := svc.Register(context.Background(), RegisterRequest{
+		Name:     "Bob",
+		Email:    "bob@example.com",
+		Password: "password123",
+		AppRole:  "user",
+	}); err != nil {
+		t.Fatalf("Register(Bob) error = %v", err)
+	}
+	bob, err := svc.Login(context.Background(), LoginRequest{Email: "bob@example.com", Password: "password123"})
+	if err != nil {
+		t.Fatalf("Login(Bob) error = %v", err)
+	}
+
+	err = svc.Logout(context.Background(), login.AccessToken, LogoutRequest{RefreshToken: bob.RefreshToken})
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("Logout(mismatched) error = %v, want ErrUnauthorized", err)
+	}
+}
+
+func TestLogoutRejectsMissingRefreshToken(t *testing.T) {
+	svc, _, _, _ := newTestService()
+	registerAlice(t, svc)
+	login := loginAlice(t, svc)
+
+	if err := svc.Logout(context.Background(), login.AccessToken, LogoutRequest{}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("Logout(empty) error = %v, want ErrInvalidInput", err)
+	}
+}
+
+type memoryUserRepository struct {
+	mu      sync.Mutex
+	users   map[uuid.UUID]User
+	byEmail map[string]uuid.UUID
+}
+
+func newMemoryUserRepository() *memoryUserRepository {
+	return &memoryUserRepository{
+		users:   make(map[uuid.UUID]User),
+		byEmail: make(map[string]uuid.UUID),
+	}
+}
+
+func (r *memoryUserRepository) Create(ctx context.Context, user User) (User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.byEmail[user.Email]; exists {
+		return User{}, ErrEmailExists
+	}
+	now := time.Now().UTC()
+	if user.TokenVersion == 0 {
+		user.TokenVersion = 1
+	}
+	user.CreatedAt = now
+	user.UpdatedAt = now
+	r.users[user.ID] = user
+	r.byEmail[user.Email] = user.ID
+	return user, nil
+}
+
+func (r *memoryUserRepository) GetByEmail(ctx context.Context, email string) (User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	id, ok := r.byEmail[email]
+	if !ok {
+		return User{}, ErrNotFound
+	}
+	return r.users[id], nil
+}
+
+func (r *memoryUserRepository) GetByID(ctx context.Context, id uuid.UUID) (User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	user, ok := r.users[id]
+	if !ok {
+		return User{}, ErrNotFound
+	}
+	return user, nil
+}
+
+func (r *memoryUserRepository) IncrementTokenVersion(ctx context.Context, id uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	user, ok := r.users[id]
+	if !ok {
+		return ErrNotFound
+	}
+	user.TokenVersion++
+	r.users[id] = user
+	return nil
+}
+
+func (r *memoryUserRepository) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.users)
+}
+
+type memoryTokenBlacklist struct {
+	mu      sync.Mutex
+	revoked map[string]bool
+}
+
+func newMemoryTokenBlacklist() *memoryTokenBlacklist {
+	return &memoryTokenBlacklist{revoked: make(map[string]bool)}
+}
+
+func (b *memoryTokenBlacklist) Add(ctx context.Context, jti string, ttl time.Duration) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.revoked[jti] = true
+	return nil
+}
+
+func (b *memoryTokenBlacklist) Has(ctx context.Context, jti string) (bool, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.revoked[jti], nil
 }

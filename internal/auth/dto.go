@@ -35,6 +35,26 @@ func (r LoginRequest) Validate() error {
 	)
 }
 
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+func (r RefreshRequest) Validate() error {
+	return validation.ValidateStruct(&r,
+		validation.Field(&r.RefreshToken, validation.Required),
+	)
+}
+
+type LogoutRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+func (r LogoutRequest) Validate() error {
+	return validation.ValidateStruct(&r,
+		validation.Field(&r.RefreshToken, validation.Required),
+	)
+}
+
 type UserResponse struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`

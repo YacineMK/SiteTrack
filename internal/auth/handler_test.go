@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -170,5 +171,72 @@ func TestMeEndpoint(t *testing.T) {
 	revoked := e.request(t, http.MethodGet, "/auth/me", "", login.AccessToken)
 	if revoked.Code != http.StatusUnauthorized {
 		t.Fatalf("revoked token status = %d, want 401", revoked.Code)
+	}
+}
+
+func TestRefreshEndpoint(t *testing.T) {
+	e := newTestEnv()
+	e.request(t, http.MethodPost, "/auth/register",
+		`{"name":"Alice","email":"alice@example.com","password":"password123","app_role":"user"}`, "")
+	login := loginResponse(t, e)
+
+	noAccess := e.request(t, http.MethodPost, "/auth/refresh", fmt.Sprintf(`{"refresh_token":%q}`, login.RefreshToken), "")
+	if noAccess.Code != http.StatusUnauthorized {
+		t.Fatalf("refresh without access token status = %d, want 401", noAccess.Code)
+	}
+
+	rec := e.request(t, http.MethodPost, "/auth/refresh", fmt.Sprintf(`{"refresh_token":%q}`, login.RefreshToken), login.AccessToken)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refresh status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+	}
+	var refreshed AuthResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &refreshed); err != nil {
+		t.Fatalf("decoding refresh response: %v", err)
+	}
+	if refreshed.AccessToken == "" || refreshed.RefreshToken == "" {
+		t.Fatal("refresh response is missing tokens")
+	}
+
+	me := e.request(t, http.MethodGet, "/auth/me", "", refreshed.AccessToken)
+	if me.Code != http.StatusOK {
+		t.Fatalf("new access token status = %d, want 200", me.Code)
+	}
+
+	reused := e.request(t, http.MethodPost, "/auth/refresh", fmt.Sprintf(`{"refresh_token":%q}`, login.RefreshToken), refreshed.AccessToken)
+	if reused.Code != http.StatusUnauthorized {
+		t.Fatalf("reused refresh token status = %d, want 401", reused.Code)
+	}
+}
+
+func TestLogoutEndpoint(t *testing.T) {
+	e := newTestEnv()
+	e.request(t, http.MethodPost, "/auth/register",
+		`{"name":"Alice","email":"alice@example.com","password":"password123","app_role":"user"}`, "")
+	login := loginResponse(t, e)
+	logoutBody := fmt.Sprintf(`{"refresh_token":%q}`, login.RefreshToken)
+
+	noAuth := e.request(t, http.MethodPost, "/auth/logout", logoutBody, "")
+	if noAuth.Code != http.StatusUnauthorized {
+		t.Fatalf("logout without access token status = %d, want 401", noAuth.Code)
+	}
+
+	noBody := e.request(t, http.MethodPost, "/auth/logout", "", login.AccessToken)
+	if noBody.Code != http.StatusBadRequest {
+		t.Fatalf("logout without body status = %d, want 400", noBody.Code)
+	}
+
+	rec := e.request(t, http.MethodPost, "/auth/logout", logoutBody, login.AccessToken)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("logout status = %d, want 204; body = %s", rec.Code, rec.Body.String())
+	}
+
+	me := e.request(t, http.MethodGet, "/auth/me", "", login.AccessToken)
+	if me.Code != http.StatusUnauthorized {
+		t.Fatalf("access after logout status = %d, want 401", me.Code)
+	}
+
+	refresh := e.request(t, http.MethodPost, "/auth/refresh", logoutBody, "")
+	if refresh.Code != http.StatusUnauthorized {
+		t.Fatalf("refresh after logout status = %d, want 401", refresh.Code)
 	}
 }
