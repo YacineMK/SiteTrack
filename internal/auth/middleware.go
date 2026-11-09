@@ -37,11 +37,15 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), userIDKey, userID)
-		ctx = context.WithValue(ctx, appRoleKey, claims.AppRole)
-		ctx = context.WithValue(ctx, tokenVersionKey, claims.TokenVersion)
+		ctx := WithContext(r.Context(), userID, claims.AppRole, claims.TokenVersion)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func WithContext(ctx context.Context, userID uuid.UUID, appRole string, tokenVersion int32) context.Context {
+	ctx = context.WithValue(ctx, userIDKey, userID)
+	ctx = context.WithValue(ctx, appRoleKey, appRole)
+	return context.WithValue(ctx, tokenVersionKey, tokenVersion)
 }
 
 func UserID(ctx context.Context) (uuid.UUID, bool) {
