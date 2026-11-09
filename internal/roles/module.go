@@ -12,20 +12,21 @@ type Dependencies struct {
 }
 
 type Module struct {
-	svc     *Service
+	authz   *auth.AuthZ
 	handler *Handler
 }
 
 func New(deps Dependencies) *Module {
 	svc := NewService(NewPostgresRepository(deps.DB))
+	authz := auth.NewAuthZ(svc)
 	return &Module{
-		svc:     svc,
-		handler: NewHandler(svc, auth.NewAuthZ(svc)),
+		authz:   authz,
+		handler: NewHandler(svc, authz),
 	}
 }
 
-func (m *Module) Service() *Service {
-	return m.svc
+func (m *Module) AuthZ() *auth.AuthZ {
+	return m.authz
 }
 
 func (m *Module) Routes(r chi.Router) {

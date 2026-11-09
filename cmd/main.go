@@ -2,7 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/YacineMK/SiteTrack/internal/app"
@@ -29,7 +34,7 @@ func main() {
 	}
 	defer postgres.Close()
 
-	redis, err := kitredis.New(ctx, kitredis.Config{
+	redisClient, err := kitredis.New(ctx, kitredis.Config{
 		Addr:            cfg.RedisAddr,
 		Password:        cfg.RedisPassword,
 		DB:              cfg.RedisDB,
@@ -39,15 +44,33 @@ func main() {
 		ConnMaxIdleTime: cfg.RedisConnMaxIdleTime,
 	})
 	if err != nil {
+		postgres.Close()
 		log.Fatal(err)
 	}
-	defer redis.Close()
+	defer redisClient.Close()
 
 	jwtManager := kitjwt.New(cfg.JWTSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
-	a := app.New(cfg.Port, postgres, redis, jwtManager, cfg.CookieSecure)
+	a := app.New(cfg.Port, postgres, redisClient, jwtManager, cfg.CookieSecure)
+
+	runCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		if err := a.Run(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("server error: %v", err)
+			stop()
+		}
+	}()
 
 	log.Printf("listening on %s", cfg.Port)
-	if err := a.Run(); err != nil {
-		log.Fatal(err)
+	<-runCtx.Done()
+
+	log.Println("shutting down")
+
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelShutdown()
+
+	if err := a.Shutdown(shutdownCtx); err != nil {
+		log.Printf("shutdown error: %v", err)
 	}
 }
