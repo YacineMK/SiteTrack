@@ -12,6 +12,7 @@ import (
 type Blacklist interface {
 	Add(ctx context.Context, jti string, ttl time.Duration) error
 	Has(ctx context.Context, jti string) (bool, error)
+	Claim(ctx context.Context, jti string, ttl time.Duration) (bool, error)
 }
 
 type RedisBlacklist struct {
@@ -29,6 +30,10 @@ func (b *RedisBlacklist) Add(ctx context.Context, jti string, ttl time.Duration)
 func (b *RedisBlacklist) Has(ctx context.Context, jti string) (bool, error) {
 	count, err := b.redis.Client.Exists(ctx, blacklistKey(jti)).Result()
 	return count > 0, err
+}
+
+func (b *RedisBlacklist) Claim(ctx context.Context, jti string, ttl time.Duration) (bool, error) {
+	return b.redis.Client.SetNX(ctx, blacklistKey(jti), "1", ttl).Result()
 }
 
 func blacklistKey(jti string) string {
