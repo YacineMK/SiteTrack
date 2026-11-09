@@ -1,6 +1,8 @@
 package app
 
 import (
+	"github.com/go-chi/chi/v5"
+
 	"github.com/YacineMK/SiteTrack/internal/auth"
 	"github.com/YacineMK/SiteTrack/internal/database"
 	"github.com/YacineMK/SiteTrack/internal/server"
@@ -8,22 +10,29 @@ import (
 	kitredis "github.com/YacineMK/SiteTrack/kit/redis"
 )
 
+type module interface {
+	Routes(chi.Router)
+}
+
 type App struct {
 	postgres *database.Postgres
 	redis    *kitredis.Redis
 	server   *server.Server
-	auth     *auth.Handler
+	modules  []module
 }
 
 func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtManager *kitjwt.Manager) *App {
-	authRepo := auth.NewPostgresRepository(postgres.Pool)
-	authService := auth.NewService(authRepo, jwtManager, auth.NewRedisBlacklist(redis))
-
 	a := &App{
 		postgres: postgres,
 		redis:    redis,
 		server:   server.New(addr),
-		auth:     auth.NewHandler(authService),
+		modules: []module{
+			auth.New(auth.Dependencies{
+				DB:    postgres.Pool,
+				Redis: redis,
+				JWT:   jwtManager,
+			}),
+		},
 	}
 	a.routes()
 
