@@ -18,11 +18,6 @@ var (
 	ErrUnauthorized       = errors.New("unauthorized")
 )
 
-var dummyHash = func() string {
-	encoded, _ := hash.Hash("invalid-password-placeholder")
-	return encoded
-}()
-
 type Session struct {
 	AccessToken      string
 	RefreshToken     string
@@ -31,17 +26,32 @@ type Session struct {
 	User             UserResponse
 }
 
-type Service struct {
+type Service interface {
+	Register(ctx context.Context, req RegisterRequest) (UserResponse, error)
+	Login(ctx context.Context, req LoginRequest) (Session, error)
+	Refresh(ctx context.Context, refreshToken string) (Session, error)
+	Logout(ctx context.Context, accessToken, refreshToken string) error
+	Me(ctx context.Context, userID uuid.UUID) (UserResponse, error)
+	ValidateAccessToken(ctx context.Context, accessToken string) (*kitjwt.Claims, error)
+}
+
+type service struct {
 	repo      Repository
 	jwt       *kitjwt.Manager
 	blacklist Blacklist
+	utils     Utils
 }
 
-func NewService(repo Repository, jwtManager *kitjwt.Manager, blacklist Blacklist) *Service {
-	return &Service{repo: repo, jwt: jwtManager, blacklist: blacklist}
+func NewService(repo Repository, jwtManager *kitjwt.Manager, blacklist Blacklist) Service {
+	return &service{
+		repo:      repo,
+		jwt:       jwtManager,
+		blacklist: blacklist,
+		utils:     NewUtils(),
+	}
 }
 
-func (s *Service) Register(ctx context.Context, req RegisterRequest) (UserResponse, error) {
+func (s *service) Register(ctx context.Context, req RegisterRequest) (UserResponse, error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	req.AppRole = strings.TrimSpace(req.AppRole)
@@ -73,10 +83,10 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (UserRespon
 		return UserResponse{}, err
 	}
 
-	return toUserResponse(user), nil
+	return s.utils.ToUserResponse(user), nil
 }
 
-func (s *Service) Login(ctx context.Context, req LoginRequest) (Session, error) {
+func (s *service) Login(ctx context.Context, req LoginRequest) (Session, error) {
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	if err := req.Validate(); err != nil {
 		return Session{}, ErrInvalidInput
@@ -85,7 +95,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (Session, error) 
 	user, err := s.repo.GetByEmail(ctx, req.Email)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			_, _ = hash.Verify(req.Password, dummyHash)
+			_, _ = hash.Verify(req.Password, s.utils.DummyHash())
 			return Session{}, ErrInvalidCredentials
 		}
 		return Session{}, err
@@ -101,10 +111,10 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (Session, error) 
 		return Session{}, err
 	}
 
-	return newSession(pair, user), nil
+	return s.utils.NewSession(pair, user), nil
 }
 
-func (s *Service) Refresh(ctx context.Context, refreshToken string) (Session, error) {
+func (s *service) Refresh(ctx context.Context, refreshToken string) (Session, error) {
 	if refreshToken == "" {
 		return Session{}, ErrUnauthorized
 	}
@@ -124,7 +134,7 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (Session, er
 		return Session{}, err
 	}
 
-	claimed, err := s.claim(ctx, claims)
+	claimed, err := s.utils.Claim(ctx, s.blacklist, claims)
 	if err != nil {
 		return Session{}, err
 	}
@@ -132,10 +142,10 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (Session, er
 		return Session{}, ErrUnauthorized
 	}
 
-	return newSession(pair, user), nil
+	return s.utils.NewSession(pair, user), nil
 }
 
-func (s *Service) Logout(ctx context.Context, accessToken, refreshToken string) error {
+func (s *service) Logout(ctx context.Context, accessToken, refreshToken string) error {
 	if accessToken == "" && refreshToken == "" {
 		return ErrUnauthorized
 	}
@@ -161,13 +171,13 @@ func (s *Service) Logout(ctx context.Context, accessToken, refreshToken string) 
 	}
 
 	if accessClaims != nil {
-		if err := s.revoke(ctx, accessClaims); err != nil {
+		if err := s.utils.Revoke(ctx, s.blacklist, accessClaims); err != nil {
 			return err
 		}
 	}
 
 	if refreshClaims != nil {
-		if err := s.revoke(ctx, refreshClaims); err != nil {
+		if err := s.utils.Revoke(ctx, s.blacklist, refreshClaims); err != nil {
 			return err
 		}
 	}
@@ -175,7 +185,7 @@ func (s *Service) Logout(ctx context.Context, accessToken, refreshToken string) 
 	return nil
 }
 
-func (s *Service) Me(ctx context.Context, userID uuid.UUID) (UserResponse, error) {
+func (s *service) Me(ctx context.Context, userID uuid.UUID) (UserResponse, error) {
 	user, err := s.repo.GetByID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -183,10 +193,10 @@ func (s *Service) Me(ctx context.Context, userID uuid.UUID) (UserResponse, error
 		}
 		return UserResponse{}, err
 	}
-	return toUserResponse(user), nil
+	return s.utils.ToUserResponse(user), nil
 }
 
-func (s *Service) ValidateAccessToken(ctx context.Context, accessToken string) (*kitjwt.Claims, error) {
+func (s *service) ValidateAccessToken(ctx context.Context, accessToken string) (*kitjwt.Claims, error) {
 	claims, err := s.jwt.ParseAccess(accessToken)
 	if err != nil {
 		return nil, ErrUnauthorized
@@ -197,7 +207,7 @@ func (s *Service) ValidateAccessToken(ctx context.Context, accessToken string) (
 	return claims, nil
 }
 
-func (s *Service) sessionUser(ctx context.Context, claims *kitjwt.Claims) (User, error) {
+func (s *service) sessionUser(ctx context.Context, claims *kitjwt.Claims) (User, error) {
 	revoked, err := s.blacklist.Has(ctx, claims.ID)
 	if err != nil {
 		return User{}, err
@@ -223,47 +233,4 @@ func (s *Service) sessionUser(ctx context.Context, claims *kitjwt.Claims) (User,
 	}
 
 	return user, nil
-}
-
-func (s *Service) revoke(ctx context.Context, claims *kitjwt.Claims) error {
-	if claims.ExpiresAt == nil {
-		return nil
-	}
-	ttl := time.Until(claims.ExpiresAt.Time)
-	if ttl <= 0 {
-		return nil
-	}
-	return s.blacklist.Add(ctx, claims.ID, ttl)
-}
-
-func (s *Service) claim(ctx context.Context, claims *kitjwt.Claims) (bool, error) {
-	if claims.ExpiresAt == nil {
-		return false, nil
-	}
-	ttl := time.Until(claims.ExpiresAt.Time)
-	if ttl <= 0 {
-		return false, nil
-	}
-	return s.blacklist.Claim(ctx, claims.ID, ttl)
-}
-
-func newSession(pair kitjwt.Pair, user User) Session {
-	return Session{
-		AccessToken:      pair.AccessToken,
-		RefreshToken:     pair.RefreshToken,
-		AccessExpiresAt:  pair.AccessExpiresAt,
-		RefreshExpiresAt: pair.RefreshExpiresAt,
-		User:             toUserResponse(user),
-	}
-}
-
-func toUserResponse(user User) UserResponse {
-	return UserResponse{
-		ID:        user.ID.String(),
-		Name:      user.Name,
-		Email:     user.Email,
-		AppRole:   user.AppRole,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
-	}
 }

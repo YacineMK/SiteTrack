@@ -13,15 +13,24 @@ var (
 	ErrPolicyNotFound = errors.New("policy not found")
 )
 
-type Service struct {
-	repo Repository
+type Service interface {
+	CreateRole(ctx context.Context, req CreateRoleRequest) (RoleResponse, error)
+	ListRoles(ctx context.Context) ([]RoleResponse, error)
+	CreatePolicy(ctx context.Context, roleID uuid.UUID, req CreatePolicyRequest) (PolicyResponse, error)
+	ListPolicies(ctx context.Context, roleID uuid.UUID) ([]PolicyResponse, error)
+	DeletePolicy(ctx context.Context, roleID uuid.UUID, resource, action string) error
 }
 
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+type service struct {
+	repo  Repository
+	utils Utils
 }
 
-func (s *Service) CreateRole(ctx context.Context, req CreateRoleRequest) (RoleResponse, error) {
+func NewService(repo Repository) Service {
+	return &service{repo: repo, utils: NewUtils()}
+}
+
+func (s *service) CreateRole(ctx context.Context, req CreateRoleRequest) (RoleResponse, error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Description = strings.TrimSpace(req.Description)
 	if err := req.Validate(); err != nil {
@@ -32,10 +41,10 @@ func (s *Service) CreateRole(ctx context.Context, req CreateRoleRequest) (RoleRe
 	if err != nil {
 		return RoleResponse{}, err
 	}
-	return toRoleResponse(role), nil
+	return s.utils.ToRoleResponse(role), nil
 }
 
-func (s *Service) ListRoles(ctx context.Context) ([]RoleResponse, error) {
+func (s *service) ListRoles(ctx context.Context) ([]RoleResponse, error) {
 	roles, err := s.repo.ListRoles(ctx)
 	if err != nil {
 		return nil, err
@@ -43,12 +52,12 @@ func (s *Service) ListRoles(ctx context.Context) ([]RoleResponse, error) {
 
 	response := make([]RoleResponse, 0, len(roles))
 	for _, role := range roles {
-		response = append(response, toRoleResponse(role))
+		response = append(response, s.utils.ToRoleResponse(role))
 	}
 	return response, nil
 }
 
-func (s *Service) CreatePolicy(ctx context.Context, roleID uuid.UUID, req CreatePolicyRequest) (PolicyResponse, error) {
+func (s *service) CreatePolicy(ctx context.Context, roleID uuid.UUID, req CreatePolicyRequest) (PolicyResponse, error) {
 	req.Resource = strings.TrimSpace(req.Resource)
 	req.Action = strings.TrimSpace(req.Action)
 	if err := req.Validate(); err != nil {
@@ -69,7 +78,7 @@ func (s *Service) CreatePolicy(ctx context.Context, roleID uuid.UUID, req Create
 	}, nil
 }
 
-func (s *Service) ListPolicies(ctx context.Context, roleID uuid.UUID) ([]PolicyResponse, error) {
+func (s *service) ListPolicies(ctx context.Context, roleID uuid.UUID) ([]PolicyResponse, error) {
 	if _, err := s.repo.GetRole(ctx, roleID); err != nil {
 		return nil, err
 	}
@@ -90,7 +99,7 @@ func (s *Service) ListPolicies(ctx context.Context, roleID uuid.UUID) ([]PolicyR
 	return response, nil
 }
 
-func (s *Service) DeletePolicy(ctx context.Context, roleID uuid.UUID, resource, action string) error {
+func (s *service) DeletePolicy(ctx context.Context, roleID uuid.UUID, resource, action string) error {
 	resource = strings.TrimSpace(resource)
 	action = strings.TrimSpace(action)
 	if resource == "" || action == "" {
@@ -105,12 +114,4 @@ func (s *Service) DeletePolicy(ctx context.Context, roleID uuid.UUID, resource, 
 		return ErrPolicyNotFound
 	}
 	return nil
-}
-
-func toRoleResponse(role Role) RoleResponse {
-	return RoleResponse{
-		ID:          role.ID.String(),
-		Name:        role.Name,
-		Description: role.Description,
-	}
 }

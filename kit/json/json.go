@@ -19,3 +19,7 @@ func DecodeJSON(r *http.Request, dest any) error {
 	defer r.Body.Close()
 	return sonic.ConfigDefault.NewDecoder(r.Body).Decode(dest)
 }
+
+func Error(w http.ResponseWriter, status int, message string) {
+	JSON(w, status, map[string]string{"error": message})
+}

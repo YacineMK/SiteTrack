@@ -29,19 +29,19 @@ func AuthenticateMiddleware(validator TokenValidator) func(http.Handler) http.Ha
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			cookie, err := r.Cookie(AccessCookieName)
 			if err != nil || cookie.Value == "" {
-				writeUnauthorized(w)
+				jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
 
 			claims, err := validator.ValidateAccessToken(r.Context(), cookie.Value)
 			if err != nil {
-				writeUnauthorized(w)
+				jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
 
 			userID, err := uuid.Parse(claims.UserID)
 			if err != nil {
-				writeUnauthorized(w)
+				jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
 
@@ -56,7 +56,7 @@ func AuthorizationMiddleware(allowedRoles ...string) func(http.Handler) http.Han
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			role, ok := AppRole(r.Context())
 			if !ok {
-				writeUnauthorized(w)
+				jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
 
@@ -67,7 +67,7 @@ func AuthorizationMiddleware(allowedRoles ...string) func(http.Handler) http.Han
 				}
 			}
 
-			writeError(w, http.StatusForbidden, "forbidden")
+			jsonutil.Error(w, http.StatusForbidden, "forbidden")
 		})
 	}
 }
@@ -86,17 +86,4 @@ func UserID(ctx context.Context) (uuid.UUID, bool) {
 func AppRole(ctx context.Context) (string, bool) {
 	role, ok := ctx.Value(appRoleKey).(string)
 	return role, ok
-}
-
-func TokenVersion(ctx context.Context) (int32, bool) {
-	version, ok := ctx.Value(tokenVersionKey).(int32)
-	return version, ok
-}
-
-func writeUnauthorized(w http.ResponseWriter) {
-	jsonutil.JSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	jsonutil.JSON(w, status, map[string]string{"error": message})
 }

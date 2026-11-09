@@ -17,7 +17,7 @@ type Dependencies struct {
 
 type Module struct {
 	handler *Handler
-	svc     *Service
+	svc     Service
 }
 
 func New(deps Dependencies) *Module {
@@ -33,6 +33,6 @@ func (m *Module) Routes(r chi.Router) {
 	m.handler.Routes(r)
 }
 
-func (m *Module) Service() *Service {
+func (m *Module) Service() Service {
 	return m.svc
 }
