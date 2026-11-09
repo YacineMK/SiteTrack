@@ -7,11 +7,22 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/YacineMK/SiteTrack/internal/database/sqlc"
 )
 
-var ErrNotFound = errors.New("task not found")
+var (
+	ErrNotFound         = errors.New("task not found")
+	ErrDependencyExists = errors.New("dependency already exists")
+)
+
+type Dependency struct {
+	DisplayID string
+	Name      string
+	Status    string
+	Steps     int32
+}
 
 type Task struct {
 	ID               uuid.UUID
@@ -30,7 +41,15 @@ type Repository interface {
 	Get(ctx context.Context, projectID uuid.UUID, displayID string) (Task, error)
 	List(ctx context.Context, projectID uuid.UUID, limit, offset int32) ([]Task, int64, error)
 	Update(ctx context.Context, projectID uuid.UUID, displayID, name string, start, end time.Time) (Task, error)
+	UpdateStatus(ctx context.Context, projectID uuid.UUID, displayID, status string) (Task, error)
 	Delete(ctx context.Context, projectID uuid.UUID, displayID string) (int64, error)
+	AddDependency(ctx context.Context, taskID, dependsOnID uuid.UUID) (int64, error)
+	RemoveDependency(ctx context.Context, taskID, dependsOnID uuid.UUID) (int64, error)
+	HasBlockingUpstream(ctx context.Context, taskID uuid.UUID) (bool, error)
+	HasStartedDownstream(ctx context.Context, taskID uuid.UUID) (bool, error)
+	Upstream(ctx context.Context, taskID uuid.UUID) ([]Dependency, error)
+	Downstream(ctx context.Context, taskID uuid.UUID) ([]Dependency, error)
+	BlockedIDs(ctx context.Context, projectID uuid.UUID) (map[uuid.UUID]bool, error)
 }
 
 type PostgresRepository struct {
@@ -109,11 +128,93 @@ func (r *PostgresRepository) Update(ctx context.Context, projectID uuid.UUID, di
 	return toTask(row), nil
 }
 
+func (r *PostgresRepository) UpdateStatus(ctx context.Context, projectID uuid.UUID, displayID, status string) (Task, error) {
+	row, err := r.queries.UpdateTaskStatus(ctx, sqlc.UpdateTaskStatusParams{
+		ProjectID: projectID,
+		DisplayID: displayID,
+		Status:    status,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Task{}, ErrNotFound
+		}
+		return Task{}, err
+	}
+	return toTask(row), nil
+}
+
 func (r *PostgresRepository) Delete(ctx context.Context, projectID uuid.UUID, displayID string) (int64, error) {
 	return r.queries.DeleteTask(ctx, sqlc.DeleteTaskParams{
 		ProjectID: projectID,
 		DisplayID: displayID,
 	})
+}
+
+func (r *PostgresRepository) AddDependency(ctx context.Context, taskID, dependsOnID uuid.UUID) (int64, error) {
+	rows, err := r.queries.AddTaskDependency(ctx, sqlc.AddTaskDependencyParams{
+		NewTaskID:   taskID,
+		DependsOnID: dependsOnID,
+	})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return 0, ErrDependencyExists
+		}
+		return 0, err
+	}
+	return rows, nil
+}
+
+func (r *PostgresRepository) RemoveDependency(ctx context.Context, taskID, dependsOnID uuid.UUID) (int64, error) {
+	return r.queries.RemoveTaskDependency(ctx, sqlc.RemoveTaskDependencyParams{
+		TaskID:    taskID,
+		DependsOn: dependsOnID,
+	})
+}
+
+func (r *PostgresRepository) HasBlockingUpstream(ctx context.Context, taskID uuid.UUID) (bool, error) {
+	return r.queries.TaskHasBlockingUpstream(ctx, taskID)
+}
+
+func (r *PostgresRepository) HasStartedDownstream(ctx context.Context, taskID uuid.UUID) (bool, error) {
+	return r.queries.TaskHasStartedDownstream(ctx, taskID)
+}
+
+func (r *PostgresRepository) Upstream(ctx context.Context, taskID uuid.UUID) ([]Dependency, error) {
+	rows, err := r.queries.ListUpstreamDependencies(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	deps := make([]Dependency, 0, len(rows))
+	for _, row := range rows {
+		deps = append(deps, Dependency{DisplayID: row.DisplayID, Name: row.Name, Status: row.Status, Steps: row.Steps})
+	}
+	return deps, nil
+}
+
+func (r *PostgresRepository) Downstream(ctx context.Context, taskID uuid.UUID) ([]Dependency, error) {
+	rows, err := r.queries.ListDownstreamDependencies(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	deps := make([]Dependency, 0, len(rows))
+	for _, row := range rows {
+		deps = append(deps, Dependency{DisplayID: row.DisplayID, Name: row.Name, Status: row.Status, Steps: row.Steps})
+	}
+	return deps, nil
+}
+
+func (r *PostgresRepository) BlockedIDs(ctx context.Context, projectID uuid.UUID) (map[uuid.UUID]bool, error) {
+	ids, err := r.queries.ListBlockedTasks(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	blocked := make(map[uuid.UUID]bool, len(ids))
+	for _, id := range ids {
+		blocked[id] = true
+	}
+	return blocked, nil
 }
 
 func toTask(row sqlc.Task) Task {

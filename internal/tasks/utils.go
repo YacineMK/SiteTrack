@@ -5,13 +5,16 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/YacineMK/SiteTrack/internal/projects"
 	jsonutil "github.com/YacineMK/SiteTrack/kit/json"
 )
 
 type Utils interface {
-	ToResponse(task Task, projectDisplayID string) TaskResponse
-	ListResponse(tasks []Task, projectDisplayID string, total int64, limit, offset int32) ListTasksResponse
+	ToResponse(task Task, projectDisplayID string, blocked bool) TaskResponse
+	ToDetailResponse(task Task, projectDisplayID string, upstream, downstream []Dependency, blocked bool) TaskDetailResponse
+	ListResponse(tasks []Task, projectDisplayID string, blocked map[uuid.UUID]bool, total int64, limit, offset int32) ListTasksResponse
 	WriteServiceError(w http.ResponseWriter, err error)
 	ParseDates(start, end string) (time.Time, time.Time, error)
 	NormalizePagination(limit, offset int32) (int32, int32)
@@ -24,7 +27,7 @@ func NewUtils() Utils {
 	return utils{}
 }
 
-func (u utils) ToResponse(task Task, projectDisplayID string) TaskResponse {
+func (u utils) ToResponse(task Task, projectDisplayID string, blocked bool) TaskResponse {
 	return TaskResponse{
 		DisplayID:        task.DisplayID,
 		ProjectDisplayID: projectDisplayID,
@@ -33,15 +36,37 @@ func (u utils) ToResponse(task Task, projectDisplayID string) TaskResponse {
 		PlannedEndDate:   task.PlannedEndDate.Format(dateLayout),
 		Status:           task.Status,
 		Late:             u.Late(task),
+		Blocked:          blocked,
 		CreatedAt:        task.CreatedAt,
 		UpdatedAt:        task.UpdatedAt,
 	}
 }
 
-func (u utils) ListResponse(tasks []Task, projectDisplayID string, total int64, limit, offset int32) ListTasksResponse {
+func (u utils) ToDetailResponse(task Task, projectDisplayID string, upstream, downstream []Dependency, blocked bool) TaskDetailResponse {
+	return TaskDetailResponse{
+		TaskResponse: u.ToResponse(task, projectDisplayID, blocked),
+		Upstream:     u.dependencies(upstream),
+		Downstream:   u.dependencies(downstream),
+	}
+}
+
+func (utils) dependencies(deps []Dependency) []DependencyResponse {
+	items := make([]DependencyResponse, 0, len(deps))
+	for _, dep := range deps {
+		items = append(items, DependencyResponse{
+			DisplayID: dep.DisplayID,
+			Name:      dep.Name,
+			Status:    dep.Status,
+			Steps:     dep.Steps,
+		})
+	}
+	return items
+}
+
+func (u utils) ListResponse(tasks []Task, projectDisplayID string, blocked map[uuid.UUID]bool, total int64, limit, offset int32) ListTasksResponse {
 	items := make([]TaskResponse, 0, len(tasks))
 	for _, task := range tasks {
-		items = append(items, u.ToResponse(task, projectDisplayID))
+		items = append(items, u.ToResponse(task, projectDisplayID, task.Status != StatusDone && blocked[task.ID]))
 	}
 	return ListTasksResponse{
 		Items:  items,
@@ -57,8 +82,18 @@ func (utils) WriteServiceError(w http.ResponseWriter, err error) {
 		jsonutil.Error(w, http.StatusBadRequest, "invalid input")
 	case errors.Is(err, ErrNotFound):
 		jsonutil.Error(w, http.StatusNotFound, "task not found")
+	case errors.Is(err, ErrDependencyNotFound):
+		jsonutil.Error(w, http.StatusNotFound, "dependency not found")
 	case errors.Is(err, projects.ErrNotFound):
 		jsonutil.Error(w, http.StatusNotFound, "project not found")
+	case errors.Is(err, ErrInvalidTransition):
+		jsonutil.Error(w, http.StatusConflict, "invalid status transition")
+	case errors.Is(err, ErrBlocked):
+		jsonutil.Error(w, http.StatusConflict, "task is blocked by incomplete dependencies")
+	case errors.Is(err, ErrCycle):
+		jsonutil.Error(w, http.StatusConflict, "dependency cycle detected")
+	case errors.Is(err, ErrDependencyExists):
+		jsonutil.Error(w, http.StatusConflict, "dependency already exists")
 	default:
 		jsonutil.Error(w, http.StatusInternalServerError, "internal server error")
 	}

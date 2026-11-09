@@ -12,6 +12,30 @@ import (
 	"github.com/google/uuid"
 )
 
+const addTaskDependency = `-- name: AddTaskDependency :execrows
+WITH RECURSIVE upstream AS (
+    SELECT td.depends_on AS id FROM task_dependencies td WHERE td.task_id = $2
+    UNION ALL
+    SELECT td.depends_on FROM task_dependencies td JOIN upstream u ON td.task_id = u.id
+)
+INSERT INTO task_dependencies (task_id, depends_on)
+SELECT $1, $2
+WHERE NOT EXISTS (SELECT 1 FROM upstream WHERE id = $1)
+`
+
+type AddTaskDependencyParams struct {
+	NewTaskID   uuid.UUID
+	DependsOnID uuid.UUID
+}
+
+func (q *Queries) AddTaskDependency(ctx context.Context, arg AddTaskDependencyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, addTaskDependency, arg.NewTaskID, arg.DependsOnID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countTasks = `-- name: CountTasks :one
 SELECT COUNT(*) FROM tasks WHERE project_id = $1
 `
@@ -107,6 +131,87 @@ func (q *Queries) GetTask(ctx context.Context, arg GetTaskParams) (Task, error) 
 	return i, err
 }
 
+const listBlockedTasks = `-- name: ListBlockedTasks :many
+WITH RECURSIVE reach AS (
+    SELECT td.task_id AS root, td.depends_on AS upstream
+    FROM task_dependencies td
+    JOIN tasks t ON t.id = td.task_id
+    WHERE t.project_id = $1
+    UNION ALL
+    SELECT r.root, td.depends_on
+    FROM task_dependencies td
+    JOIN reach r ON td.task_id = r.upstream
+)
+SELECT DISTINCT r.root
+FROM reach r
+JOIN tasks t ON t.id = r.upstream
+WHERE t.status <> 'done'
+`
+
+func (q *Queries) ListBlockedTasks(ctx context.Context, targetProjectID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listBlockedTasks, targetProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var root uuid.UUID
+		if err := rows.Scan(&root); err != nil {
+			return nil, err
+		}
+		items = append(items, root)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDownstreamDependencies = `-- name: ListDownstreamDependencies :many
+WITH RECURSIVE downstream AS (
+    SELECT td.task_id AS id, 1 AS depth FROM task_dependencies td WHERE td.depends_on = $1
+    UNION ALL
+    SELECT td.task_id, d.depth + 1 FROM task_dependencies td JOIN downstream d ON td.depends_on = d.id
+)
+SELECT t.display_id, t.name, t.status, MIN(d.depth)::int AS steps
+FROM downstream d JOIN tasks t ON t.id = d.id
+GROUP BY t.id, t.display_id, t.name, t.status
+ORDER BY steps, t.display_id
+`
+
+type ListDownstreamDependenciesRow struct {
+	DisplayID string
+	Name      string
+	Status    string
+	Steps     int32
+}
+
+func (q *Queries) ListDownstreamDependencies(ctx context.Context, targetID uuid.UUID) ([]ListDownstreamDependenciesRow, error) {
+	rows, err := q.db.Query(ctx, listDownstreamDependencies, targetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDownstreamDependenciesRow{}
+	for rows.Next() {
+		var i ListDownstreamDependenciesRow
+		if err := rows.Scan(
+			&i.DisplayID,
+			&i.Name,
+			&i.Status,
+			&i.Steps,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTasks = `-- name: ListTasks :many
 SELECT id, display_id, project_id, name, planned_start_date, planned_end_date, status, created_at, updated_at
 FROM tasks
@@ -150,6 +255,103 @@ func (q *Queries) ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, e
 		return nil, err
 	}
 	return items, nil
+}
+
+const listUpstreamDependencies = `-- name: ListUpstreamDependencies :many
+WITH RECURSIVE upstream AS (
+    SELECT td.depends_on AS id, 1 AS depth FROM task_dependencies td WHERE td.task_id = $1
+    UNION ALL
+    SELECT td.depends_on, u.depth + 1 FROM task_dependencies td JOIN upstream u ON td.task_id = u.id
+)
+SELECT t.display_id, t.name, t.status, MIN(u.depth)::int AS steps
+FROM upstream u JOIN tasks t ON t.id = u.id
+GROUP BY t.id, t.display_id, t.name, t.status
+ORDER BY steps, t.display_id
+`
+
+type ListUpstreamDependenciesRow struct {
+	DisplayID string
+	Name      string
+	Status    string
+	Steps     int32
+}
+
+func (q *Queries) ListUpstreamDependencies(ctx context.Context, targetID uuid.UUID) ([]ListUpstreamDependenciesRow, error) {
+	rows, err := q.db.Query(ctx, listUpstreamDependencies, targetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUpstreamDependenciesRow{}
+	for rows.Next() {
+		var i ListUpstreamDependenciesRow
+		if err := rows.Scan(
+			&i.DisplayID,
+			&i.Name,
+			&i.Status,
+			&i.Steps,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const removeTaskDependency = `-- name: RemoveTaskDependency :execrows
+DELETE FROM task_dependencies WHERE task_id = $1 AND depends_on = $2
+`
+
+type RemoveTaskDependencyParams struct {
+	TaskID    uuid.UUID
+	DependsOn uuid.UUID
+}
+
+func (q *Queries) RemoveTaskDependency(ctx context.Context, arg RemoveTaskDependencyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, removeTaskDependency, arg.TaskID, arg.DependsOn)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const taskHasBlockingUpstream = `-- name: TaskHasBlockingUpstream :one
+WITH RECURSIVE upstream AS (
+    SELECT td.depends_on AS id FROM task_dependencies td WHERE td.task_id = $1
+    UNION ALL
+    SELECT td.depends_on FROM task_dependencies td JOIN upstream u ON td.task_id = u.id
+)
+SELECT EXISTS (
+    SELECT 1 FROM upstream u JOIN tasks t ON t.id = u.id WHERE t.status <> 'done'
+)
+`
+
+func (q *Queries) TaskHasBlockingUpstream(ctx context.Context, targetID uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, taskHasBlockingUpstream, targetID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const taskHasStartedDownstream = `-- name: TaskHasStartedDownstream :one
+WITH RECURSIVE downstream AS (
+    SELECT td.task_id AS id FROM task_dependencies td WHERE td.depends_on = $1
+    UNION ALL
+    SELECT td.task_id FROM task_dependencies td JOIN downstream d ON td.depends_on = d.id
+)
+SELECT EXISTS (
+    SELECT 1 FROM downstream d JOIN tasks t ON t.id = d.id WHERE t.status <> 'not_started'
+)
+`
+
+func (q *Queries) TaskHasStartedDownstream(ctx context.Context, targetID uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, taskHasStartedDownstream, targetID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const updateTask = `-- name: UpdateTask :one
