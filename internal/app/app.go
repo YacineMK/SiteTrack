@@ -9,6 +9,7 @@ import (
 	"github.com/YacineMK/SiteTrack/internal/auth"
 	"github.com/YacineMK/SiteTrack/internal/companystore"
 	"github.com/YacineMK/SiteTrack/internal/database"
+	"github.com/YacineMK/SiteTrack/internal/materials"
 	"github.com/YacineMK/SiteTrack/internal/middleware"
 	"github.com/YacineMK/SiteTrack/internal/projects"
 	"github.com/YacineMK/SiteTrack/internal/roles"
@@ -48,6 +49,7 @@ func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtMan
 		authMiddleware: middleware.AuthenticateMiddleware(authModule.Service()),
 		public:         []module{authModule},
 		protected: []module{
+			materials.New(materials.Dependencies{DB: postgres.Pool}),
 			companystore.New(),
 			rolesModule,
 			projects.New(projects.Dependencies{DB: postgres.Pool, Redis: redis}),
