@@ -55,3 +55,26 @@ type ListTasksResponse struct {
 	Limit  int32          `json:"limit"`
 	Offset int32          `json:"offset"`
 }
+
+type DependencyResponse struct {
+	DisplayID string `json:"display_id"`
+	Name      string `json:"name"`
+	Status    string `json:"status"`
+	Steps     int32  `json:"steps"`
+}
+
+type TaskDetailResponse struct {
+	TaskResponse
+	Upstream   []DependencyResponse `json:"upstream"`
+	Downstream []DependencyResponse `json:"downstream"`
+}
+
+type AddDependencyRequest struct {
+	DependsOn string `json:"depends_on"`
+}
+
+func (r AddDependencyRequest) Validate() error {
+	return validation.ValidateStruct(&r,
+		validation.Field(&r.DependsOn, validation.Required),
+	)
+}

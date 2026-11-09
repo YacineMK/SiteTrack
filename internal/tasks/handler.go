@@ -85,6 +85,66 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
+	task, err := h.svc.Start(r.Context(), chi.URLParam(r, "project_display_id"), chi.URLParam(r, "task_display_id"))
+	if err != nil {
+		h.utils.WriteServiceError(w, err)
+		return
+	}
+
+	jsonutil.JSON(w, http.StatusOK, task)
+}
+
+func (h *Handler) done(w http.ResponseWriter, r *http.Request) {
+	task, err := h.svc.Done(r.Context(), chi.URLParam(r, "project_display_id"), chi.URLParam(r, "task_display_id"))
+	if err != nil {
+		h.utils.WriteServiceError(w, err)
+		return
+	}
+
+	jsonutil.JSON(w, http.StatusOK, task)
+}
+
+func (h *Handler) reopen(w http.ResponseWriter, r *http.Request) {
+	task, err := h.svc.Reopen(r.Context(), chi.URLParam(r, "project_display_id"), chi.URLParam(r, "task_display_id"))
+	if err != nil {
+		h.utils.WriteServiceError(w, err)
+		return
+	}
+
+	jsonutil.JSON(w, http.StatusOK, task)
+}
+
+func (h *Handler) addDependency(w http.ResponseWriter, r *http.Request) {
+	var req AddDependencyRequest
+	if err := jsonutil.DecodeJSON(r, &req); err != nil {
+		jsonutil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := req.Validate(); err != nil {
+		jsonutil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	err := h.svc.AddDependency(r.Context(), chi.URLParam(r, "project_display_id"), chi.URLParam(r, "task_display_id"), req.DependsOn)
+	if err != nil {
+		h.utils.WriteServiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) removeDependency(w http.ResponseWriter, r *http.Request) {
+	err := h.svc.RemoveDependency(r.Context(), chi.URLParam(r, "project_display_id"), chi.URLParam(r, "task_display_id"), chi.URLParam(r, "depends_on_display_id"))
+	if err != nil {
+		h.utils.WriteServiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) pagination(w http.ResponseWriter, r *http.Request) (int32, int32, bool) {
 	query := r.URL.Query()
 
