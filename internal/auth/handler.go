@@ -5,11 +5,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/YacineMK/SiteTrack/internal/middleware"
 	jsonutil "github.com/YacineMK/SiteTrack/kit/json"
 )
 
 const (
-	accessCookieName  = "access_token"
+	accessCookieName  = middleware.AccessCookieName
 	refreshCookieName = "refresh_token"
 )
 
@@ -91,25 +92,24 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
-	accessCookie, err := r.Cookie(accessCookieName)
-	if err != nil || accessCookie.Value == "" {
+	var accessToken, refreshToken string
+	if cookie, err := r.Cookie(accessCookieName); err == nil {
+		accessToken = cookie.Value
+	}
+	if cookie, err := r.Cookie(refreshCookieName); err == nil {
+		refreshToken = cookie.Value
+	}
+
+	if accessToken == "" && refreshToken == "" {
 		writeUnauthorized(w)
 		return
 	}
 
-	refreshCookie, err := r.Cookie(refreshCookieName)
-	if err != nil || refreshCookie.Value == "" {
-		writeUnauthorized(w)
-		return
-	}
-
-	if err := h.svc.Logout(r.Context(), accessCookie.Value, refreshCookie.Value); err != nil {
-		if errors.Is(err, ErrUnauthorized) {
-			writeUnauthorized(w)
+	if err := h.svc.Logout(r.Context(), accessToken, refreshToken); err != nil {
+		if !errors.Is(err, ErrUnauthorized) {
+			writeError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "internal server error")
-		return
 	}
 
 	h.clearSessionCookies(w)
@@ -117,7 +117,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
-	userID, ok := UserID(r.Context())
+	userID, ok := middleware.UserID(r.Context())
 	if !ok {
 		writeUnauthorized(w)
 		return

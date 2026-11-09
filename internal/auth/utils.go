@@ -2,8 +2,10 @@ package auth
 
 import (
 	"context"
+	"net/http"
 	"time"
 
+	jsonutil "github.com/YacineMK/SiteTrack/kit/json"
 	kitredis "github.com/YacineMK/SiteTrack/kit/redis"
 )
 
@@ -31,4 +33,8 @@ func (b *RedisBlacklist) Has(ctx context.Context, jti string) (bool, error) {
 
 func blacklistKey(jti string) string {
 	return "auth:blacklist:" + jti
+}
+
+func writeUnauthorized(w http.ResponseWriter) {
+	jsonutil.JSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 }

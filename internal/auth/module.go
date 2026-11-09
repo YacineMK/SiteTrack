@@ -1,8 +1,6 @@
 package auth
 
 import (
-	"net/http"
-
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -35,6 +33,6 @@ func (m *Module) Routes(r chi.Router) {
 	m.handler.Routes(r)
 }
 
-func (m *Module) Middleware(next http.Handler) http.Handler {
-	return m.svc.Middleware(next)
+func (m *Module) Service() *Service {
+	return m.svc
 }

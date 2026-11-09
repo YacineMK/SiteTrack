@@ -30,7 +30,6 @@ type Policy struct {
 }
 
 type Repository interface {
-	HasPolicy(ctx context.Context, role, resource, action string) (bool, error)
 	CreateRole(ctx context.Context, name, description string) (Role, error)
 	ListRoles(ctx context.Context) ([]Role, error)
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
@@ -45,14 +44,6 @@ type PostgresRepository struct {
 
 func NewPostgresRepository(db sqlc.DBTX) *PostgresRepository {
 	return &PostgresRepository{queries: sqlc.New(db)}
-}
-
-func (r *PostgresRepository) HasPolicy(ctx context.Context, role, resource, action string) (bool, error) {
-	return r.queries.CheckRolePolicy(ctx, sqlc.CheckRolePolicyParams{
-		RoleName: role,
-		Resource: resource,
-		Action:   action,
-	})
 }
 
 func (r *PostgresRepository) CreateRole(ctx context.Context, name, description string) (Role, error) {
@@ -74,6 +65,7 @@ func (r *PostgresRepository) ListRoles(ctx context.Context) ([]Role, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	roles := make([]Role, 0, len(rows))
 	for _, row := range rows {
 		roles = append(roles, toRole(row))
@@ -112,6 +104,7 @@ func (r *PostgresRepository) ListPolicies(ctx context.Context, roleID uuid.UUID)
 	if err != nil {
 		return nil, err
 	}
+
 	policies := make([]Policy, 0, len(rows))
 	for _, row := range rows {
 		policies = append(policies, Policy{

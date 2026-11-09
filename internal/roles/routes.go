@@ -1,10 +1,14 @@
 package roles
 
-import "github.com/go-chi/chi/v5"
+import (
+	"github.com/go-chi/chi/v5"
+
+	"github.com/YacineMK/SiteTrack/internal/middleware"
+)
 
 func (h *Handler) Routes(r chi.Router) {
 	r.Route("/roles", func(r chi.Router) {
-		r.Use(h.authz.RequireAppRole("super_admin"))
+		r.Use(middleware.AuthorizationMiddleware("super_admin"))
 
 		r.Post("/", h.create)
 		r.Get("/", h.list)

@@ -27,33 +27,6 @@ func (q *Queries) AddRolePolicy(ctx context.Context, arg AddRolePolicyParams) er
 	return err
 }
 
-const checkRolePolicy = `-- name: CheckRolePolicy :one
-SELECT EXISTS (
-    SELECT 1
-    FROM role_policies rp
-    JOIN app_roles ar ON ar.id = rp.role_id
-    WHERE ar.name = $1
-      AND rp.resource = $2
-      AND (
-          rp.action = $3
-          OR ($3 = 'read' AND rp.action = 'write')
-      )
-) AS allowed
-`
-
-type CheckRolePolicyParams struct {
-	RoleName string
-	Resource string
-	Action   string
-}
-
-func (q *Queries) CheckRolePolicy(ctx context.Context, arg CheckRolePolicyParams) (bool, error) {
-	row := q.db.QueryRow(ctx, checkRolePolicy, arg.RoleName, arg.Resource, arg.Action)
-	var allowed bool
-	err := row.Scan(&allowed)
-	return allowed, err
-}
-
 const createRole = `-- name: CreateRole :one
 INSERT INTO app_roles (name, description)
 VALUES ($1, $2)

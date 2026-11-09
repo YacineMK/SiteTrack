@@ -1,16 +1,3 @@
--- name: CheckRolePolicy :one
-SELECT EXISTS (
-    SELECT 1
-    FROM role_policies rp
-    JOIN app_roles ar ON ar.id = rp.role_id
-    WHERE ar.name = sqlc.arg(role_name)
-      AND rp.resource = sqlc.arg(resource)
-      AND (
-          rp.action = sqlc.arg(action)
-          OR (sqlc.arg(action) = 'read' AND rp.action = 'write')
-      )
-) AS allowed;
-
 -- name: CreateRole :one
 INSERT INTO app_roles (name, description)
 VALUES ($1, $2)
