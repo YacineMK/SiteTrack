@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 const (
@@ -13,6 +14,7 @@ const (
 	readTimeout       = 15 * time.Second
 	writeTimeout      = 15 * time.Second
 	idleTimeout       = 60 * time.Second
+	maxBodyBytes      = 1 << 20
 )
 
 type Server struct {
@@ -22,6 +24,12 @@ type Server struct {
 
 func New(addr string) *Server {
 	r := chi.NewRouter()
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.RequestSize(maxBodyBytes))
+
 	return &Server{
 		mux: r,
 		http: &http.Server{
