@@ -139,6 +139,31 @@ type Material struct {
 	UpdatedAt time.Time
 }
 
+type Notification struct {
+	ID        uuid.UUID
+	UserID    uuid.UUID
+	Type      string
+	Title     string
+	Body      string
+	Data      []byte
+	ReadAt    pgtype.Timestamptz
+	CreatedAt time.Time
+}
+
+type Outbox struct {
+	ID            uuid.UUID
+	Kind          string
+	Payload       []byte
+	Status        string
+	Attempts      int32
+	NextAttemptAt time.Time
+	LockedAt      pgtype.Timestamptz
+	LockedBy      pgtype.Text
+	LastError     pgtype.Text
+	CreatedAt     time.Time
+	ProcessedAt   pgtype.Timestamptz
+}
+
 type Project struct {
 	ID               uuid.UUID
 	DisplayID        string
