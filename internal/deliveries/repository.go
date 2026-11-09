@@ -1,0 +1,309 @@
+package deliveries
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/YacineMK/SiteTrack/internal/database/sqlc"
+)
+
+const (
+	PartyCompany = "company"
+	PartyProject = "project"
+
+	StatusInTransit = "in_transit"
+	StatusDelivered = "delivered"
+	StatusRejected  = "rejected"
+	StatusCancelled = "cancelled"
+)
+
+var (
+	ErrNotFound          = errors.New("delivery not found")
+	ErrInvalidTransition = errors.New("invalid status transition")
+	ErrInsufficientStock = errors.New("insufficient stock")
+)
+
+type Line struct {
+	MaterialID uuid.UUID
+	Name       string
+	Unit       string
+	Quantity   float64
+}
+
+type Delivery struct {
+	ID           uuid.UUID
+	SenderType   string
+	SenderID     *uuid.UUID
+	ReceiverType string
+	ReceiverID   *uuid.UUID
+	Status       string
+	SentAt       time.Time
+	ReceivedAt   *time.Time
+	Lines        []Line
+}
+
+type Repository interface {
+	Create(ctx context.Context, delivery Delivery) (Delivery, error)
+	Get(ctx context.Context, id uuid.UUID) (Delivery, error)
+	ListCompany(ctx context.Context, status string, limit, offset int32) ([]Delivery, int64, error)
+	ListProject(ctx context.Context, projectID uuid.UUID, status string, limit, offset int32) ([]Delivery, int64, error)
+	Transition(ctx context.Context, id uuid.UUID, status string) (Delivery, error)
+}
+
+type PostgresRepository struct {
+	pool    *pgxpool.Pool
+	queries *sqlc.Queries
+}
+
+func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
+	return &PostgresRepository{pool: pool, queries: sqlc.New(pool)}
+}
+
+func (r *PostgresRepository) Create(ctx context.Context, delivery Delivery) (Delivery, error) {
+	var id uuid.UUID
+
+	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		q := r.queries.WithTx(tx)
+
+		for _, line := range delivery.Lines {
+			var rows int64
+			var err error
+			if delivery.SenderType == PartyCompany {
+				rows, err = q.DeductCompanyStock(ctx, sqlc.DeductCompanyStockParams{
+					MaterialID: line.MaterialID,
+					Quantity:   line.Quantity,
+				})
+			} else {
+				rows, err = q.DeductProjectStock(ctx, sqlc.DeductProjectStockParams{
+					ProjectID:  *delivery.SenderID,
+					MaterialID: line.MaterialID,
+					Quantity:   line.Quantity,
+				})
+			}
+			if err != nil {
+				return err
+			}
+			if rows == 0 {
+				return ErrInsufficientStock
+			}
+		}
+
+		createdID, err := uuid.NewV7()
+		if err != nil {
+			return err
+		}
+		id = createdID
+
+		if _, err := q.CreateDelivery(ctx, sqlc.CreateDeliveryParams{
+			ID:           id,
+			SenderType:   sqlc.DeliveryParty(delivery.SenderType),
+			SenderID:     toPgUUID(delivery.SenderID),
+			ReceiverType: sqlc.DeliveryParty(delivery.ReceiverType),
+			ReceiverID:   toPgUUID(delivery.ReceiverID),
+		}); err != nil {
+			return err
+		}
+
+		for _, line := range delivery.Lines {
+			lineID, err := uuid.NewV7()
+			if err != nil {
+				return err
+			}
+			if err := q.CreateDeliveryLine(ctx, sqlc.CreateDeliveryLineParams{
+				ID:         lineID,
+				DeliveryID: id,
+				MaterialID: line.MaterialID,
+				Quantity:   line.Quantity,
+			}); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return Delivery{}, err
+	}
+
+	return r.Get(ctx, id)
+}
+
+func (r *PostgresRepository) Get(ctx context.Context, id uuid.UUID) (Delivery, error) {
+	row, err := r.queries.GetDelivery(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Delivery{}, ErrNotFound
+		}
+		return Delivery{}, err
+	}
+
+	rows, err := r.queries.GetDeliveryLines(ctx, id)
+	if err != nil {
+		return Delivery{}, err
+	}
+
+	delivery := toDelivery(row)
+	delivery.Lines = make([]Line, 0, len(rows))
+	for _, line := range rows {
+		delivery.Lines = append(delivery.Lines, Line{
+			MaterialID: line.MaterialID,
+			Name:       line.Name,
+			Unit:       line.Unit,
+			Quantity:   line.Quantity,
+		})
+	}
+	return delivery, nil
+}
+
+func (r *PostgresRepository) ListCompany(ctx context.Context, status string, limit, offset int32) ([]Delivery, int64, error) {
+	total, err := r.queries.CountCompanyDeliveries(ctx, status)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.queries.ListCompanyDeliveries(ctx, sqlc.ListCompanyDeliveriesParams{
+		StatusFilter: status,
+		PageLimit:    limit,
+		PageOffset:   offset,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return toDeliveries(rows), total, nil
+}
+
+func (r *PostgresRepository) ListProject(ctx context.Context, projectID uuid.UUID, status string, limit, offset int32) ([]Delivery, int64, error) {
+	total, err := r.queries.CountProjectDeliveries(ctx, sqlc.CountProjectDeliveriesParams{
+		ProjectID:    projectID,
+		StatusFilter: status,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.queries.ListProjectDeliveries(ctx, sqlc.ListProjectDeliveriesParams{
+		ProjectID:    projectID,
+		StatusFilter: status,
+		PageLimit:    limit,
+		PageOffset:   offset,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return toDeliveries(rows), total, nil
+}
+
+func (r *PostgresRepository) Transition(ctx context.Context, id uuid.UUID, status string) (Delivery, error) {
+	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		q := r.queries.WithTx(tx)
+
+		current, err := q.GetDelivery(ctx, id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+
+		if _, err := q.UpdateDeliveryStatus(ctx, sqlc.UpdateDeliveryStatusParams{
+			ID:     id,
+			Status: sqlc.DeliveryStatus(status),
+		}); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrInvalidTransition
+			}
+			return err
+		}
+
+		lines, err := q.GetDeliveryLines(ctx, id)
+		if err != nil {
+			return err
+		}
+
+		partyType := string(current.SenderType)
+		partyID := fromPgUUID(current.SenderID)
+		if status == StatusDelivered {
+			partyType = string(current.ReceiverType)
+			partyID = fromPgUUID(current.ReceiverID)
+		}
+		return creditStock(ctx, q, partyType, partyID, lines)
+	})
+	if err != nil {
+		return Delivery{}, err
+	}
+
+	return r.Get(ctx, id)
+}
+
+func creditStock(ctx context.Context, q *sqlc.Queries, partyType string, partyID *uuid.UUID, lines []sqlc.GetDeliveryLinesRow) error {
+	for _, line := range lines {
+		var err error
+		if partyType == PartyCompany {
+			_, err = q.AddCompanyStock(ctx, sqlc.AddCompanyStockParams{
+				MaterialID: line.MaterialID,
+				Quantity:   line.Quantity,
+			})
+		} else {
+			_, err = q.AddProjectStock(ctx, sqlc.AddProjectStockParams{
+				ProjectID:  *partyID,
+				MaterialID: line.MaterialID,
+				Quantity:   line.Quantity,
+			})
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func toDeliveries(rows []sqlc.Delivery) []Delivery {
+	deliveries := make([]Delivery, 0, len(rows))
+	for _, row := range rows {
+		deliveries = append(deliveries, toDelivery(row))
+	}
+	return deliveries
+}
+
+func toDelivery(row sqlc.Delivery) Delivery {
+	return Delivery{
+		ID:           row.ID,
+		SenderType:   string(row.SenderType),
+		SenderID:     fromPgUUID(row.SenderID),
+		ReceiverType: string(row.ReceiverType),
+		ReceiverID:   fromPgUUID(row.ReceiverID),
+		Status:       string(row.Status),
+		SentAt:       row.SentAt,
+		ReceivedAt:   fromPgTime(row.ReceivedAt),
+	}
+}
+
+func toPgUUID(id *uuid.UUID) pgtype.UUID {
+	if id == nil {
+		return pgtype.UUID{}
+	}
+	return pgtype.UUID{Bytes: *id, Valid: true}
+}
+
+func fromPgUUID(id pgtype.UUID) *uuid.UUID {
+	if !id.Valid {
+		return nil
+	}
+	value := uuid.UUID(id.Bytes)
+	return &value
+}
+
+func fromPgTime(value pgtype.Timestamptz) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+	return &value.Time
+}

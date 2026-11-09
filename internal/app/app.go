@@ -9,6 +9,7 @@ import (
 	"github.com/YacineMK/SiteTrack/internal/auth"
 	"github.com/YacineMK/SiteTrack/internal/companystore"
 	"github.com/YacineMK/SiteTrack/internal/database"
+	"github.com/YacineMK/SiteTrack/internal/deliveries"
 	"github.com/YacineMK/SiteTrack/internal/materials"
 	"github.com/YacineMK/SiteTrack/internal/middleware"
 	"github.com/YacineMK/SiteTrack/internal/projects"
@@ -56,6 +57,7 @@ func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtMan
 			projects.New(projects.Dependencies{DB: postgres.Pool, Redis: redis}),
 			projectstore.New(projectstore.Dependencies{DB: postgres.Pool}),
 			tasks.New(tasks.Dependencies{DB: postgres.Pool, Redis: redis}),
+			deliveries.New(deliveries.Dependencies{DB: postgres.Pool}),
 		},
 	}
 	a.routes()
