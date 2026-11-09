@@ -168,15 +168,22 @@ type Outbox struct {
 }
 
 type Project struct {
-	ID               uuid.UUID
-	DisplayID        string
-	Name             string
-	Description      string
-	PlannedStartDate time.Time
-	PlannedEndDate   time.Time
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	Search           interface{}
+	ID                  uuid.UUID
+	DisplayID           string
+	Name                string
+	Description         string
+	PlannedStartDate    time.Time
+	PlannedEndDate      time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	Search              interface{}
+	MemberCount         int32
+	TaskCountNotStarted int32
+	TaskCountInProgress int32
+	TaskCountDone       int32
+	LateCount           int32
+	BlockedCount        int32
+	Progress            pgtype.Float8
 }
 
 type ProjectIDCounter struct {
@@ -214,6 +221,8 @@ type Task struct {
 	Status           string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	Blocked          bool
+	DependentsCount  int32
 }
 
 type TaskDependency struct {

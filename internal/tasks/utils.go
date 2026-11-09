@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/YacineMK/SiteTrack/internal/projects"
 	jsonutil "github.com/YacineMK/SiteTrack/kit/json"
 )
@@ -14,10 +12,10 @@ import (
 type Utils interface {
 	ToResponse(task Task, projectDisplayID string, blocked bool) TaskResponse
 	ToDetailResponse(task Task, projectDisplayID string, upstream, downstream []Dependency, blocked bool) TaskDetailResponse
-	ListResponse(tasks []Task, projectDisplayID string, blocked map[uuid.UUID]bool, total int64, limit, offset int32) ListTasksResponse
+	ListResponse(tasks []Task, projectDisplayID string, total int64, limit int32) ListTasksResponse
 	WriteServiceError(w http.ResponseWriter, err error)
 	ParseDates(start, end string) (time.Time, time.Time, error)
-	NormalizePagination(limit, offset int32) (int32, int32)
+	NormalizeLimit(limit int32) int32
 	Late(task Task) bool
 }
 
@@ -65,16 +63,15 @@ func (utils) dependencies(deps []Dependency) []DependencyResponse {
 	return items
 }
 
-func (u utils) ListResponse(tasks []Task, projectDisplayID string, blocked map[uuid.UUID]bool, total int64, limit, offset int32) ListTasksResponse {
+func (u utils) ListResponse(tasks []Task, projectDisplayID string, total int64, limit int32) ListTasksResponse {
 	items := make([]TaskResponse, 0, len(tasks))
 	for _, task := range tasks {
-		items = append(items, u.ToResponse(task, projectDisplayID, task.Status != StatusDone && blocked[task.ID]))
+		items = append(items, u.ToResponse(task, projectDisplayID, task.Status != StatusDone && task.Blocked))
 	}
 	return ListTasksResponse{
-		Items:  items,
-		Total:  total,
-		Limit:  limit,
-		Offset: offset,
+		Items: items,
+		Total: total,
+		Limit: limit,
 	}
 }
 
@@ -115,17 +112,14 @@ func (utils) ParseDates(start, end string) (time.Time, time.Time, error) {
 	return startDate, endDate, nil
 }
 
-func (utils) NormalizePagination(limit, offset int32) (int32, int32) {
+func (utils) NormalizeLimit(limit int32) int32 {
 	if limit <= 0 {
-		limit = 20
+		return 20
 	}
 	if limit > 100 {
-		limit = 100
+		return 100
 	}
-	if offset < 0 {
-		offset = 0
-	}
-	return limit, offset
+	return limit
 }
 
 func (utils) Late(task Task) bool {

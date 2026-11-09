@@ -44,7 +44,7 @@ WHERE t.project_id = $1
   AND (NULLIF($4::text, '')::date IS NULL OR t.planned_start_date >= NULLIF($4::text, '')::date)
   AND (NULLIF($5::text, '')::date IS NULL OR t.planned_end_date <= NULLIF($5::text, '')::date)
   AND (NOT $6::boolean OR (t.status = 'not_started' AND t.planned_start_date < CURRENT_DATE) OR (t.status = 'in_progress' AND t.planned_end_date < CURRENT_DATE))
-  AND (NOT $7::boolean OR t.id = ANY($8::uuid[]))
+  AND (NOT $7::boolean OR t.blocked)
 `
 
 type CountTasksParams struct {
@@ -55,7 +55,6 @@ type CountTasksParams struct {
 	ToDate      string
 	LateOnly    bool
 	BlockedOnly bool
-	BlockedIds  []uuid.UUID
 }
 
 func (q *Queries) CountTasks(ctx context.Context, arg CountTasksParams) (int64, error) {
@@ -67,7 +66,6 @@ func (q *Queries) CountTasks(ctx context.Context, arg CountTasksParams) (int64, 
 		arg.ToDate,
 		arg.LateOnly,
 		arg.BlockedOnly,
-		arg.BlockedIds,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -77,7 +75,7 @@ func (q *Queries) CountTasks(ctx context.Context, arg CountTasksParams) (int64, 
 const createTask = `-- name: CreateTask :one
 INSERT INTO tasks (id, display_id, project_id, name, planned_start_date, planned_end_date)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, display_id, project_id, name, planned_start_date, planned_end_date, status, created_at, updated_at
+RETURNING id, display_id, project_id, name, planned_start_date, planned_end_date, status, created_at, updated_at, blocked, dependents_count
 `
 
 type CreateTaskParams struct {
@@ -109,6 +107,8 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Blocked,
+		&i.DependentsCount,
 	)
 	return i, err
 }
@@ -131,7 +131,7 @@ func (q *Queries) DeleteTask(ctx context.Context, arg DeleteTaskParams) (int64, 
 }
 
 const getTask = `-- name: GetTask :one
-SELECT id, display_id, project_id, name, planned_start_date, planned_end_date, status, created_at, updated_at
+SELECT id, display_id, project_id, name, planned_start_date, planned_end_date, status, created_at, updated_at, blocked, dependents_count
 FROM tasks
 WHERE project_id = $1 AND display_id = $2
 `
@@ -154,45 +154,10 @@ func (q *Queries) GetTask(ctx context.Context, arg GetTaskParams) (Task, error) 
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Blocked,
+		&i.DependentsCount,
 	)
 	return i, err
-}
-
-const listBlockedTasks = `-- name: ListBlockedTasks :many
-WITH RECURSIVE reach AS (
-    SELECT td.task_id AS root, td.depends_on AS upstream
-    FROM task_dependencies td
-    JOIN tasks t ON t.id = td.task_id
-    WHERE t.project_id = $1
-    UNION
-    SELECT r.root, td.depends_on
-    FROM task_dependencies td
-    JOIN reach r ON td.task_id = r.upstream
-)
-SELECT DISTINCT r.root
-FROM reach r
-JOIN tasks t ON t.id = r.upstream
-WHERE t.status <> 'done'
-`
-
-func (q *Queries) ListBlockedTasks(ctx context.Context, targetProjectID uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := q.db.Query(ctx, listBlockedTasks, targetProjectID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []uuid.UUID{}
-	for rows.Next() {
-		var root uuid.UUID
-		if err := rows.Scan(&root); err != nil {
-			return nil, err
-		}
-		items = append(items, root)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const listDownstreamDependencies = `-- name: ListDownstreamDependencies :many
@@ -240,20 +205,37 @@ func (q *Queries) ListDownstreamDependencies(ctx context.Context, targetID uuid.
 }
 
 const listTasks = `-- name: ListTasks :many
+WITH cur AS (
+    SELECT name, planned_start_date, planned_end_date, dependents_count, display_id
+    FROM tasks
+    WHERE project_id = $1 AND display_id = $8
+)
 SELECT t.id, t.display_id, t.project_id, t.name, t.planned_start_date, t.planned_end_date,
-       t.status, t.created_at, t.updated_at,
-       (SELECT COUNT(*) FROM task_dependencies td WHERE td.depends_on = t.id) AS dependents_count,
+       t.status, t.blocked, t.dependents_count, t.created_at, t.updated_at,
        (SELECT COALESCE(jsonb_agg(t2.display_id ORDER BY t2.display_id), '[]'::jsonb)::text
         FROM task_dependencies td JOIN tasks t2 ON t2.id = td.depends_on
         WHERE td.task_id = t.id) AS depends_on
 FROM tasks t
+LEFT JOIN cur ON TRUE
 WHERE t.project_id = $1
   AND ($2::text = '' OR t.name ILIKE '%' || $2::text || '%' OR t.display_id ILIKE '%' || $2::text || '%')
   AND ($3::text = '' OR t.status = $3::text)
   AND (NULLIF($4::text, '')::date IS NULL OR t.planned_start_date >= NULLIF($4::text, '')::date)
   AND (NULLIF($5::text, '')::date IS NULL OR t.planned_end_date <= NULLIF($5::text, '')::date)
   AND (NOT $6::boolean OR (t.status = 'not_started' AND t.planned_start_date < CURRENT_DATE) OR (t.status = 'in_progress' AND t.planned_end_date < CURRENT_DATE))
-  AND (NOT $7::boolean OR t.id = ANY($8::uuid[]))
+  AND (NOT $7::boolean OR t.blocked)
+  AND ($8::text = '' OR (cur.display_id IS NOT NULL AND CASE
+        WHEN $9::text = 'name' AND $10::text = 'desc' THEN (t.name, t.display_id) < (cur.name, cur.display_id)
+        WHEN $9::text = 'name' THEN (t.name, t.display_id) > (cur.name, cur.display_id)
+        WHEN $9::text = 'start_date' AND $10::text = 'desc' THEN (t.planned_start_date, t.display_id) < (cur.planned_start_date, cur.display_id)
+        WHEN $9::text = 'start_date' THEN (t.planned_start_date, t.display_id) > (cur.planned_start_date, cur.display_id)
+        WHEN $9::text = 'end_date' AND $10::text = 'desc' THEN (t.planned_end_date, t.display_id) < (cur.planned_end_date, cur.display_id)
+        WHEN $9::text = 'end_date' THEN (t.planned_end_date, t.display_id) > (cur.planned_end_date, cur.display_id)
+        WHEN $9::text = 'dependents' AND $10::text = 'desc' THEN (t.dependents_count, t.display_id) < (cur.dependents_count, cur.display_id)
+        WHEN $9::text = 'dependents' THEN (t.dependents_count, t.display_id) > (cur.dependents_count, cur.display_id)
+        WHEN $10::text = 'desc' THEN t.display_id < cur.display_id
+        ELSE t.display_id > cur.display_id
+      END))
 ORDER BY
   CASE WHEN $9::text = 'name' AND $10::text = 'asc' THEN t.name END ASC,
   CASE WHEN $9::text = 'name' AND $10::text = 'desc' THEN t.name END DESC,
@@ -261,13 +243,11 @@ ORDER BY
   CASE WHEN $9::text = 'start_date' AND $10::text = 'desc' THEN t.planned_start_date END DESC,
   CASE WHEN $9::text = 'end_date' AND $10::text = 'asc' THEN t.planned_end_date END ASC,
   CASE WHEN $9::text = 'end_date' AND $10::text = 'desc' THEN t.planned_end_date END DESC,
-  CASE WHEN $9::text = 'dependents' AND $10::text = 'asc' THEN (SELECT COUNT(*) FROM task_dependencies td WHERE td.depends_on = t.id) END ASC,
-  CASE WHEN $9::text = 'dependents' AND $10::text = 'desc' THEN (SELECT COUNT(*) FROM task_dependencies td WHERE td.depends_on = t.id) END DESC,
-  CASE WHEN $9::text IN ('', 'id') AND $10::text <> 'desc' THEN t.display_id END ASC,
-  CASE WHEN $9::text IN ('', 'id') AND $10::text = 'desc' THEN t.display_id END DESC,
+  CASE WHEN $9::text = 'dependents' AND $10::text = 'asc' THEN t.dependents_count END ASC,
+  CASE WHEN $9::text = 'dependents' AND $10::text = 'desc' THEN t.dependents_count END DESC,
+  CASE WHEN $10::text = 'desc' THEN t.display_id END DESC,
   t.display_id ASC
-LIMIT $12
-OFFSET $11
+LIMIT $11
 `
 
 type ListTasksParams struct {
@@ -278,10 +258,9 @@ type ListTasksParams struct {
 	ToDate      string
 	LateOnly    bool
 	BlockedOnly bool
-	BlockedIds  []uuid.UUID
+	AfterID     string
 	SortBy      string
 	SortDir     string
-	PageOffset  int32
 	PageLimit   int32
 }
 
@@ -293,9 +272,10 @@ type ListTasksRow struct {
 	PlannedStartDate time.Time
 	PlannedEndDate   time.Time
 	Status           string
+	Blocked          bool
+	DependentsCount  int32
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
-	DependentsCount  int64
 	DependsOn        string
 }
 
@@ -308,10 +288,9 @@ func (q *Queries) ListTasks(ctx context.Context, arg ListTasksParams) ([]ListTas
 		arg.ToDate,
 		arg.LateOnly,
 		arg.BlockedOnly,
-		arg.BlockedIds,
+		arg.AfterID,
 		arg.SortBy,
 		arg.SortDir,
-		arg.PageOffset,
 		arg.PageLimit,
 	)
 	if err != nil {
@@ -329,9 +308,10 @@ func (q *Queries) ListTasks(ctx context.Context, arg ListTasksParams) ([]ListTas
 			&i.PlannedStartDate,
 			&i.PlannedEndDate,
 			&i.Status,
+			&i.Blocked,
+			&i.DependentsCount,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.DependentsCount,
 			&i.DependsOn,
 		); err != nil {
 			return nil, err
@@ -448,7 +428,7 @@ SET name = $3,
     planned_end_date = $5,
     updated_at = NOW()
 WHERE project_id = $1 AND display_id = $2
-RETURNING id, display_id, project_id, name, planned_start_date, planned_end_date, status, created_at, updated_at
+RETURNING id, display_id, project_id, name, planned_start_date, planned_end_date, status, created_at, updated_at, blocked, dependents_count
 `
 
 type UpdateTaskParams struct {
@@ -478,6 +458,8 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, e
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Blocked,
+		&i.DependentsCount,
 	)
 	return i, err
 }
@@ -487,7 +469,7 @@ UPDATE tasks
 SET status = $3,
     updated_at = NOW()
 WHERE project_id = $1 AND display_id = $2
-RETURNING id, display_id, project_id, name, planned_start_date, planned_end_date, status, created_at, updated_at
+RETURNING id, display_id, project_id, name, planned_start_date, planned_end_date, status, created_at, updated_at, blocked, dependents_count
 `
 
 type UpdateTaskStatusParams struct {
@@ -509,6 +491,8 @@ func (q *Queries) UpdateTaskStatus(ctx context.Context, arg UpdateTaskStatusPara
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Blocked,
+		&i.DependentsCount,
 	)
 	return i, err
 }

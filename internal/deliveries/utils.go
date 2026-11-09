@@ -12,10 +12,10 @@ import (
 
 type Utils interface {
 	ToResponse(delivery Delivery) DeliveryResponse
-	ListResponse(deliveries []Delivery, total int64, limit, offset int32) ListDeliveriesResponse
+	ListResponse(deliveries []Delivery, total int64, limit int32) ListDeliveriesResponse
 	WriteServiceError(w http.ResponseWriter, err error)
 	ParseID(value string) (uuid.UUID, error)
-	NormalizePagination(limit, offset int32) (int32, int32)
+	NormalizeLimit(limit int32) int32
 }
 
 type utils struct{}
@@ -52,16 +52,15 @@ func (u utils) ToResponse(delivery Delivery) DeliveryResponse {
 	}
 }
 
-func (u utils) ListResponse(deliveries []Delivery, total int64, limit, offset int32) ListDeliveriesResponse {
+func (u utils) ListResponse(deliveries []Delivery, total int64, limit int32) ListDeliveriesResponse {
 	items := make([]DeliveryResponse, 0, len(deliveries))
 	for _, delivery := range deliveries {
 		items = append(items, u.ToResponse(delivery))
 	}
 	return ListDeliveriesResponse{
-		Items:  items,
-		Total:  total,
-		Limit:  limit,
-		Offset: offset,
+		Items: items,
+		Total: total,
+		Limit: limit,
 	}
 }
 
@@ -90,15 +89,12 @@ func (utils) ParseID(value string) (uuid.UUID, error) {
 	return id, nil
 }
 
-func (utils) NormalizePagination(limit, offset int32) (int32, int32) {
+func (utils) NormalizeLimit(limit int32) int32 {
 	if limit <= 0 {
-		limit = 20
+		return 20
 	}
 	if limit > 100 {
-		limit = 100
+		return 100
 	}
-	if offset < 0 {
-		offset = 0
-	}
-	return limit, offset
+	return limit
 }

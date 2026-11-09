@@ -81,8 +81,7 @@ type DeliveryResponse struct {
 }
 
 type ListDeliveriesResponse struct {
-	Items  []DeliveryResponse `json:"items"`
-	Total  int64              `json:"total"`
-	Limit  int32              `json:"limit"`
-	Offset int32              `json:"offset"`
+	Items []DeliveryResponse `json:"items"`
+	Total int64              `json:"total"`
+	Limit int32              `json:"limit"`
 }

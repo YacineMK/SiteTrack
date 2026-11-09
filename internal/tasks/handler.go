@@ -37,7 +37,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
-	limit, offset, ok := h.pagination(w, r)
+	limit, ok := h.limit(w, r)
 	if !ok {
 		return
 	}
@@ -47,7 +47,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		query.Get("q"), query.Get("status"), query.Get("from_date"), query.Get("to_date"),
 		query.Get("sort_by"), query.Get("sort_dir"),
 		query.Get("late") == "true", query.Get("blocked") == "true",
-		limit, offset)
+		limit, query.Get("after"))
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return
@@ -152,28 +152,15 @@ func (h *Handler) removeDependency(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *Handler) pagination(w http.ResponseWriter, r *http.Request) (int32, int32, bool) {
-	query := r.URL.Query()
-
-	limit := int64(20)
-	if value := query.Get("limit"); value != "" {
-		parsed, err := strconv.ParseInt(value, 10, 32)
-		if err != nil {
-			jsonutil.Error(w, http.StatusBadRequest, "invalid limit")
-			return 0, 0, false
-		}
-		limit = parsed
+func (h *Handler) limit(w http.ResponseWriter, r *http.Request) (int32, bool) {
+	value := r.URL.Query().Get("limit")
+	if value == "" {
+		return 20, true
 	}
-
-	offset := int64(0)
-	if value := query.Get("offset"); value != "" {
-		parsed, err := strconv.ParseInt(value, 10, 32)
-		if err != nil {
-			jsonutil.Error(w, http.StatusBadRequest, "invalid offset")
-			return 0, 0, false
-		}
-		offset = parsed
+	parsed, err := strconv.ParseInt(value, 10, 32)
+	if err != nil {
+		jsonutil.Error(w, http.StatusBadRequest, "invalid limit")
+		return 0, false
 	}
-
-	return int32(limit), int32(offset), true
+	return int32(parsed), true
 }

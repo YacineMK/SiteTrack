@@ -67,13 +67,13 @@ func (h *Handler) createProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listCompany(w http.ResponseWriter, r *http.Request) {
-	limit, offset, ok := h.pagination(w, r)
+	limit, ok := h.limit(w, r)
 	if !ok {
 		return
 	}
 
 	query := r.URL.Query()
-	deliveries, err := h.svc.ListCompany(r.Context(), query.Get("status"), query.Get("q"), query.Get("direction"), query.Get("from_date"), query.Get("to_date"), query.Get("project"), limit, offset)
+	deliveries, err := h.svc.ListCompany(r.Context(), query.Get("status"), query.Get("q"), query.Get("direction"), query.Get("from_date"), query.Get("to_date"), query.Get("project"), limit, query.Get("after"))
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return
@@ -83,13 +83,13 @@ func (h *Handler) listCompany(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listProject(w http.ResponseWriter, r *http.Request) {
-	limit, offset, ok := h.pagination(w, r)
+	limit, ok := h.limit(w, r)
 	if !ok {
 		return
 	}
 
 	query := r.URL.Query()
-	deliveries, err := h.svc.ListProject(r.Context(), chi.URLParam(r, "project_display_id"), query.Get("status"), query.Get("q"), query.Get("direction"), query.Get("from_date"), query.Get("to_date"), limit, offset)
+	deliveries, err := h.svc.ListProject(r.Context(), chi.URLParam(r, "project_display_id"), query.Get("status"), query.Get("q"), query.Get("direction"), query.Get("from_date"), query.Get("to_date"), limit, query.Get("after"))
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return
@@ -171,28 +171,15 @@ func deliveryActor(r *http.Request) (uuid.UUID, string, bool) {
 	return userID, role, true
 }
 
-func (h *Handler) pagination(w http.ResponseWriter, r *http.Request) (int32, int32, bool) {
-	query := r.URL.Query()
-
-	limit := int64(20)
-	if value := query.Get("limit"); value != "" {
-		parsed, err := strconv.ParseInt(value, 10, 32)
-		if err != nil {
-			jsonutil.Error(w, http.StatusBadRequest, "invalid limit")
-			return 0, 0, false
-		}
-		limit = parsed
+func (h *Handler) limit(w http.ResponseWriter, r *http.Request) (int32, bool) {
+	value := r.URL.Query().Get("limit")
+	if value == "" {
+		return 20, true
 	}
-
-	offset := int64(0)
-	if value := query.Get("offset"); value != "" {
-		parsed, err := strconv.ParseInt(value, 10, 32)
-		if err != nil {
-			jsonutil.Error(w, http.StatusBadRequest, "invalid offset")
-			return 0, 0, false
-		}
-		offset = parsed
+	parsed, err := strconv.ParseInt(value, 10, 32)
+	if err != nil {
+		jsonutil.Error(w, http.StatusBadRequest, "invalid limit")
+		return 0, false
 	}
-
-	return int32(limit), int32(offset), true
+	return int32(parsed), true
 }

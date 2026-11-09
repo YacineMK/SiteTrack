@@ -52,10 +52,9 @@ type TaskResponse struct {
 }
 
 type ListTasksResponse struct {
-	Items  []TaskResponse `json:"items"`
-	Total  int64          `json:"total"`
-	Limit  int32          `json:"limit"`
-	Offset int32          `json:"offset"`
+	Items []TaskResponse `json:"items"`
+	Total int64          `json:"total"`
+	Limit int32          `json:"limit"`
 }
 
 type DependencyResponse struct {

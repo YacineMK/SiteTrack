@@ -113,8 +113,7 @@ type InvitationResponse struct {
 }
 
 type ListProjectsResponse struct {
-	Items  []ProjectResponse `json:"items"`
-	Total  int64             `json:"total"`
-	Limit  int32             `json:"limit"`
-	Offset int32             `json:"offset"`
+	Items []ProjectResponse `json:"items"`
+	Total int64             `json:"total"`
+	Limit int32             `json:"limit"`
 }

@@ -33,6 +33,7 @@ type Task struct {
 	PlannedStartDate time.Time
 	PlannedEndDate   time.Time
 	Status           string
+	Blocked          bool
 	DependsOn        []string
 	DependentsCount  int64
 	CreatedAt        time.Time
@@ -49,9 +50,8 @@ type ListParams struct {
 	SortDir     string
 	LateOnly    bool
 	BlockedOnly bool
-	BlockedIDs  []uuid.UUID
+	After       string
 	Limit       int32
-	Offset      int32
 }
 
 type Repository interface {
@@ -67,7 +67,6 @@ type Repository interface {
 	HasStartedDownstream(ctx context.Context, taskID uuid.UUID) (bool, error)
 	Upstream(ctx context.Context, taskID uuid.UUID) ([]Dependency, error)
 	Downstream(ctx context.Context, taskID uuid.UUID) ([]Dependency, error)
-	BlockedIDs(ctx context.Context, projectID uuid.UUID) (map[uuid.UUID]bool, error)
 }
 
 type PostgresRepository struct {
@@ -116,7 +115,6 @@ func (r *PostgresRepository) List(ctx context.Context, params ListParams) ([]Tas
 		ToDate:      params.ToDate,
 		LateOnly:    params.LateOnly,
 		BlockedOnly: params.BlockedOnly,
-		BlockedIds:  params.BlockedIDs,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -130,11 +128,10 @@ func (r *PostgresRepository) List(ctx context.Context, params ListParams) ([]Tas
 		ToDate:      params.ToDate,
 		LateOnly:    params.LateOnly,
 		BlockedOnly: params.BlockedOnly,
-		BlockedIds:  params.BlockedIDs,
+		AfterID:     params.After,
 		SortBy:      params.SortBy,
 		SortDir:     params.SortDir,
 		PageLimit:   params.Limit,
-		PageOffset:  params.Offset,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -240,19 +237,6 @@ func (r *PostgresRepository) Downstream(ctx context.Context, taskID uuid.UUID) (
 	return deps, nil
 }
 
-func (r *PostgresRepository) BlockedIDs(ctx context.Context, projectID uuid.UUID) (map[uuid.UUID]bool, error) {
-	ids, err := r.queries.ListBlockedTasks(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
-
-	blocked := make(map[uuid.UUID]bool, len(ids))
-	for _, id := range ids {
-		blocked[id] = true
-	}
-	return blocked, nil
-}
-
 func toTask(row sqlc.Task) Task {
 	return Task{
 		ID:               row.ID,
@@ -262,6 +246,8 @@ func toTask(row sqlc.Task) Task {
 		PlannedStartDate: row.PlannedStartDate,
 		PlannedEndDate:   row.PlannedEndDate,
 		Status:           row.Status,
+		Blocked:          row.Blocked,
+		DependentsCount:  int64(row.DependentsCount),
 		CreatedAt:        row.CreatedAt,
 		UpdatedAt:        row.UpdatedAt,
 	}
@@ -278,8 +264,9 @@ func toListTask(row sqlc.ListTasksRow) Task {
 		PlannedStartDate: row.PlannedStartDate,
 		PlannedEndDate:   row.PlannedEndDate,
 		Status:           row.Status,
+		Blocked:          row.Blocked,
 		DependsOn:        dependsOn,
-		DependentsCount:  row.DependentsCount,
+		DependentsCount:  int64(row.DependentsCount),
 		CreatedAt:        row.CreatedAt,
 		UpdatedAt:        row.UpdatedAt,
 	}

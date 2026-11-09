@@ -29,7 +29,7 @@ var (
 type Service interface {
 	Create(ctx context.Context, projectDisplayID string, req CreateTaskRequest) (TaskResponse, error)
 	Get(ctx context.Context, projectDisplayID, taskDisplayID string) (TaskDetailResponse, error)
-	List(ctx context.Context, projectDisplayID, query, status, fromDate, toDate, sortBy, sortDir string, lateOnly, blockedOnly bool, limit, offset int32) (ListTasksResponse, error)
+	List(ctx context.Context, projectDisplayID, query, status, fromDate, toDate, sortBy, sortDir string, lateOnly, blockedOnly bool, limit int32, after string) (ListTasksResponse, error)
 	Update(ctx context.Context, projectDisplayID, taskDisplayID string, req UpdateTaskRequest) (TaskResponse, error)
 	Delete(ctx context.Context, projectDisplayID, taskDisplayID string) error
 	Start(ctx context.Context, projectDisplayID, taskDisplayID string) (TaskResponse, error)
@@ -107,18 +107,12 @@ func (s *service) Get(ctx context.Context, projectDisplayID, taskDisplayID strin
 		return TaskDetailResponse{}, err
 	}
 
-	blocked := false
-	if task.Status != StatusDone {
-		blocked, err = s.repo.HasBlockingUpstream(ctx, task.ID)
-		if err != nil {
-			return TaskDetailResponse{}, err
-		}
-	}
+	blocked := task.Status != StatusDone && task.Blocked
 
 	return s.utils.ToDetailResponse(task, project.DisplayID, upstream, downstream, blocked), nil
 }
 
-func (s *service) List(ctx context.Context, projectDisplayID, query, status, fromDate, toDate, sortBy, sortDir string, lateOnly, blockedOnly bool, limit, offset int32) (ListTasksResponse, error) {
+func (s *service) List(ctx context.Context, projectDisplayID, query, status, fromDate, toDate, sortBy, sortDir string, lateOnly, blockedOnly bool, limit int32, after string) (ListTasksResponse, error) {
 	switch status {
 	case "", StatusNotStarted, StatusInProgress, StatusDone:
 	default:
@@ -152,21 +146,19 @@ func (s *service) List(ctx context.Context, projectDisplayID, query, status, fro
 		}
 	}
 
+	if sortBy == "" {
+		sortBy = "id"
+	}
+	if sortDir == "" {
+		sortDir = "asc"
+	}
+
 	project, err := s.projects.GetByDisplayID(ctx, projectDisplayID)
 	if err != nil {
 		return ListTasksResponse{}, err
 	}
 
-	limit, offset = s.utils.NormalizePagination(limit, offset)
-
-	blockedMap, err := s.repo.BlockedIDs(ctx, project.ID)
-	if err != nil {
-		return ListTasksResponse{}, err
-	}
-	blockedIDs := make([]uuid.UUID, 0, len(blockedMap))
-	for id := range blockedMap {
-		blockedIDs = append(blockedIDs, id)
-	}
+	limit = s.utils.NormalizeLimit(limit)
 
 	tasks, total, err := s.repo.List(ctx, ListParams{
 		ProjectID:   project.ID,
@@ -178,15 +170,14 @@ func (s *service) List(ctx context.Context, projectDisplayID, query, status, fro
 		SortDir:     sortDir,
 		LateOnly:    lateOnly,
 		BlockedOnly: blockedOnly,
-		BlockedIDs:  blockedIDs,
+		After:       after,
 		Limit:       limit,
-		Offset:      offset,
 	})
 	if err != nil {
 		return ListTasksResponse{}, err
 	}
 
-	return s.utils.ListResponse(tasks, project.DisplayID, blockedMap, total, limit, offset), nil
+	return s.utils.ListResponse(tasks, project.DisplayID, total, limit), nil
 }
 
 func (s *service) Update(ctx context.Context, projectDisplayID, taskDisplayID string, req UpdateTaskRequest) (TaskResponse, error) {
@@ -210,13 +201,7 @@ func (s *service) Update(ctx context.Context, projectDisplayID, taskDisplayID st
 		return TaskResponse{}, err
 	}
 
-	blocked := false
-	if task.Status != StatusDone {
-		blocked, err = s.repo.HasBlockingUpstream(ctx, task.ID)
-		if err != nil {
-			return TaskResponse{}, err
-		}
-	}
+	blocked := task.Status != StatusDone && task.Blocked
 
 	return s.utils.ToResponse(task, project.DisplayID, blocked), nil
 }
@@ -278,13 +263,7 @@ func (s *service) transition(ctx context.Context, projectDisplayID, taskDisplayI
 		return TaskResponse{}, err
 	}
 
-	blocked := false
-	if updated.Status != StatusDone {
-		blocked, err = s.repo.HasBlockingUpstream(ctx, updated.ID)
-		if err != nil {
-			return TaskResponse{}, err
-		}
-	}
+	blocked := updated.Status != StatusDone && updated.Blocked
 
 	return s.utils.ToResponse(updated, project.DisplayID, blocked), nil
 }

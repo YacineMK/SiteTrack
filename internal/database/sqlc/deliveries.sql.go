@@ -248,10 +248,14 @@ func (q *Queries) GetDeliveryLines(ctx context.Context, deliveryID uuid.UUID) ([
 }
 
 const listCompanyDeliveries = `-- name: ListCompanyDeliveries :many
+WITH cur AS (
+    SELECT id, sent_at FROM deliveries WHERE id = NULLIF($7::text, '')::uuid
+)
 SELECT d.id, d.sender_type, d.sender_id, d.receiver_type, d.receiver_id, d.status, d.sent_at, d.received_at, d.sent_by, d.received_by,
        COALESCE(su.name, '')::text AS sent_by_name,
        COALESCE(ru.name, '')::text AS received_by_name
 FROM deliveries d
+LEFT JOIN cur ON TRUE
 LEFT JOIN users su ON su.id = d.sent_by
 LEFT JOIN users ru ON ru.id = d.received_by
 WHERE (d.sender_type = 'company' OR d.receiver_type = 'company')
@@ -265,8 +269,9 @@ WHERE (d.sender_type = 'company' OR d.receiver_type = 'company')
   AND (NULLIF($4::text, '')::date IS NULL OR d.sent_at >= NULLIF($4::text, '')::date)
   AND (NULLIF($5::text, '')::date IS NULL OR d.sent_at < NULLIF($5::text, '')::date + 1)
   AND ($6::text = '' OR d.id::text ILIKE '%' || $6::text || '%' OR EXISTS (SELECT 1 FROM delivery_lines dl JOIN materials m ON m.id = dl.material_id WHERE dl.delivery_id = d.id AND m.name ILIKE '%' || $6::text || '%') OR EXISTS (SELECT 1 FROM projects p WHERE (p.id = d.sender_id OR p.id = d.receiver_id) AND p.display_id ILIKE '%' || $6::text || '%'))
-ORDER BY d.sent_at DESC
-LIMIT $8 OFFSET $7
+  AND ($7::text = '' OR (cur.id IS NOT NULL AND (d.sent_at, d.id) < (cur.sent_at, cur.id)))
+ORDER BY d.sent_at DESC, d.id DESC
+LIMIT $8
 `
 
 type ListCompanyDeliveriesParams struct {
@@ -276,7 +281,7 @@ type ListCompanyDeliveriesParams struct {
 	FromDate     string
 	ToDate       string
 	Query        string
-	PageOffset   int32
+	AfterID      string
 	PageLimit    int32
 }
 
@@ -303,7 +308,7 @@ func (q *Queries) ListCompanyDeliveries(ctx context.Context, arg ListCompanyDeli
 		arg.FromDate,
 		arg.ToDate,
 		arg.Query,
-		arg.PageOffset,
+		arg.AfterID,
 		arg.PageLimit,
 	)
 	if err != nil {
@@ -338,10 +343,14 @@ func (q *Queries) ListCompanyDeliveries(ctx context.Context, arg ListCompanyDeli
 }
 
 const listProjectDeliveries = `-- name: ListProjectDeliveries :many
+WITH cur AS (
+    SELECT id, sent_at FROM deliveries WHERE id = NULLIF($7::text, '')::uuid
+)
 SELECT d.id, d.sender_type, d.sender_id, d.receiver_type, d.receiver_id, d.status, d.sent_at, d.received_at, d.sent_by, d.received_by,
        COALESCE(su.name, '')::text AS sent_by_name,
        COALESCE(ru.name, '')::text AS received_by_name
 FROM deliveries d
+LEFT JOIN cur ON TRUE
 LEFT JOIN users su ON su.id = d.sent_by
 LEFT JOIN users ru ON ru.id = d.received_by
 WHERE ((d.sender_type = 'project' AND d.sender_id = $1::uuid) OR (d.receiver_type = 'project' AND d.receiver_id = $1::uuid))
@@ -352,8 +361,9 @@ WHERE ((d.sender_type = 'project' AND d.sender_id = $1::uuid) OR (d.receiver_typ
   AND (NULLIF($4::text, '')::date IS NULL OR d.sent_at >= NULLIF($4::text, '')::date)
   AND (NULLIF($5::text, '')::date IS NULL OR d.sent_at < NULLIF($5::text, '')::date + 1)
   AND ($6::text = '' OR d.id::text ILIKE '%' || $6::text || '%' OR EXISTS (SELECT 1 FROM delivery_lines dl JOIN materials m ON m.id = dl.material_id WHERE dl.delivery_id = d.id AND m.name ILIKE '%' || $6::text || '%') OR EXISTS (SELECT 1 FROM projects p WHERE (p.id = d.sender_id OR p.id = d.receiver_id) AND p.display_id ILIKE '%' || $6::text || '%'))
-ORDER BY d.sent_at DESC
-LIMIT $8 OFFSET $7
+  AND ($7::text = '' OR (cur.id IS NOT NULL AND (d.sent_at, d.id) < (cur.sent_at, cur.id)))
+ORDER BY d.sent_at DESC, d.id DESC
+LIMIT $8
 `
 
 type ListProjectDeliveriesParams struct {
@@ -363,7 +373,7 @@ type ListProjectDeliveriesParams struct {
 	FromDate     string
 	ToDate       string
 	Query        string
-	PageOffset   int32
+	AfterID      string
 	PageLimit    int32
 }
 
@@ -390,7 +400,7 @@ func (q *Queries) ListProjectDeliveries(ctx context.Context, arg ListProjectDeli
 		arg.FromDate,
 		arg.ToDate,
 		arg.Query,
-		arg.PageOffset,
+		arg.AfterID,
 		arg.PageLimit,
 	)
 	if err != nil {

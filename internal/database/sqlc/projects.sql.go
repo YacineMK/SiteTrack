@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const addProjectMember = `-- name: AddProjectMember :exec
@@ -46,24 +47,11 @@ func (q *Queries) AddProjectMemberIfAbsent(ctx context.Context, arg AddProjectMe
 }
 
 const countProjects = `-- name: CountProjects :one
-WITH stats AS (
-    SELECT project_id,
-           COUNT(*) FILTER (WHERE status = 'not_started') AS not_started,
-           COUNT(*) FILTER (WHERE status = 'in_progress') AS in_progress,
-           COUNT(*) FILTER (WHERE status = 'done') AS done,
-           COUNT(*) FILTER (WHERE (status = 'not_started' AND planned_start_date < CURRENT_DATE)
-                              OR (status = 'in_progress' AND planned_end_date < CURRENT_DATE)) AS late
-    FROM tasks
-    GROUP BY project_id
-), members AS (
-    SELECT project_id, COUNT(*) AS member_count FROM project_members GROUP BY project_id
-)
 SELECT COUNT(*)
 FROM projects p
-LEFT JOIN stats ON stats.project_id = p.id
 WHERE ($1::boolean
    OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $2))
-  AND (NOT $3::boolean OR COALESCE(stats.late, 0) > 0)
+  AND (NOT $3::boolean OR p.late_count > 0)
 `
 
 type CountProjectsParams struct {
@@ -80,27 +68,14 @@ func (q *Queries) CountProjects(ctx context.Context, arg CountProjectsParams) (i
 }
 
 const countSearchProjects = `-- name: CountSearchProjects :one
-WITH stats AS (
-    SELECT project_id,
-           COUNT(*) FILTER (WHERE status = 'not_started') AS not_started,
-           COUNT(*) FILTER (WHERE status = 'in_progress') AS in_progress,
-           COUNT(*) FILTER (WHERE status = 'done') AS done,
-           COUNT(*) FILTER (WHERE (status = 'not_started' AND planned_start_date < CURRENT_DATE)
-                              OR (status = 'in_progress' AND planned_end_date < CURRENT_DATE)) AS late
-    FROM tasks
-    GROUP BY project_id
-), members AS (
-    SELECT project_id, COUNT(*) AS member_count FROM project_members GROUP BY project_id
-)
 SELECT COUNT(*)
 FROM projects p
-LEFT JOIN stats ON stats.project_id = p.id
 WHERE ($1::boolean
    OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $2))
   AND (p.search @@ websearch_to_tsquery('english', $3)
    OR p.name ILIKE '%' || $3 || '%'
    OR p.display_id ILIKE '%' || $3 || '%')
-  AND (NOT $4::boolean OR COALESCE(stats.late, 0) > 0)
+  AND (NOT $4::boolean OR p.late_count > 0)
 `
 
 type CountSearchProjectsParams struct {
@@ -125,7 +100,7 @@ func (q *Queries) CountSearchProjects(ctx context.Context, arg CountSearchProjec
 const createProject = `-- name: CreateProject :one
 INSERT INTO projects (id, display_id, name, description, planned_start_date, planned_end_date)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, display_id, name, description, planned_start_date, planned_end_date, created_at, updated_at
+RETURNING id, display_id, name, description, planned_start_date, planned_end_date, created_at, updated_at, member_count, task_count_not_started, task_count_in_progress, task_count_done, late_count, blocked_count, progress
 `
 
 type CreateProjectParams struct {
@@ -138,14 +113,21 @@ type CreateProjectParams struct {
 }
 
 type CreateProjectRow struct {
-	ID               uuid.UUID
-	DisplayID        string
-	Name             string
-	Description      string
-	PlannedStartDate time.Time
-	PlannedEndDate   time.Time
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                  uuid.UUID
+	DisplayID           string
+	Name                string
+	Description         string
+	PlannedStartDate    time.Time
+	PlannedEndDate      time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	MemberCount         int32
+	TaskCountNotStarted int32
+	TaskCountInProgress int32
+	TaskCountDone       int32
+	LateCount           int32
+	BlockedCount        int32
+	Progress            pgtype.Float8
 }
 
 func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (CreateProjectRow, error) {
@@ -167,6 +149,13 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (C
 		&i.PlannedEndDate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MemberCount,
+		&i.TaskCountNotStarted,
+		&i.TaskCountInProgress,
+		&i.TaskCountDone,
+		&i.LateCount,
+		&i.BlockedCount,
+		&i.Progress,
 	)
 	return i, err
 }
@@ -201,20 +190,27 @@ func (q *Queries) FindUserByEmail(ctx context.Context, email string) (FindUserBy
 }
 
 const getProjectByDisplayID = `-- name: GetProjectByDisplayID :one
-SELECT id, display_id, name, description, planned_start_date, planned_end_date, created_at, updated_at
+SELECT id, display_id, name, description, planned_start_date, planned_end_date, created_at, updated_at, member_count, task_count_not_started, task_count_in_progress, task_count_done, late_count, blocked_count, progress
 FROM projects
 WHERE display_id = $1
 `
 
 type GetProjectByDisplayIDRow struct {
-	ID               uuid.UUID
-	DisplayID        string
-	Name             string
-	Description      string
-	PlannedStartDate time.Time
-	PlannedEndDate   time.Time
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                  uuid.UUID
+	DisplayID           string
+	Name                string
+	Description         string
+	PlannedStartDate    time.Time
+	PlannedEndDate      time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	MemberCount         int32
+	TaskCountNotStarted int32
+	TaskCountInProgress int32
+	TaskCountDone       int32
+	LateCount           int32
+	BlockedCount        int32
+	Progress            pgtype.Float8
 }
 
 func (q *Queries) GetProjectByDisplayID(ctx context.Context, displayID string) (GetProjectByDisplayIDRow, error) {
@@ -229,6 +225,13 @@ func (q *Queries) GetProjectByDisplayID(ctx context.Context, displayID string) (
 		&i.PlannedEndDate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MemberCount,
+		&i.TaskCountNotStarted,
+		&i.TaskCountInProgress,
+		&i.TaskCountDone,
+		&i.LateCount,
+		&i.BlockedCount,
+		&i.Progress,
 	)
 	return i, err
 }
@@ -292,62 +295,62 @@ func (q *Queries) ListProjectMembers(ctx context.Context, projectID uuid.UUID) (
 }
 
 const listProjects = `-- name: ListProjects :many
-WITH stats AS (
-    SELECT project_id,
-           COUNT(*) FILTER (WHERE status = 'not_started') AS not_started,
-           COUNT(*) FILTER (WHERE status = 'in_progress') AS in_progress,
-           COUNT(*) FILTER (WHERE status = 'done') AS done,
-           COUNT(*) FILTER (WHERE (status = 'not_started' AND planned_start_date < CURRENT_DATE)
-                              OR (status = 'in_progress' AND planned_end_date < CURRENT_DATE)) AS late
-    FROM tasks
-    GROUP BY project_id
-), members AS (
-    SELECT project_id, COUNT(*) AS member_count FROM project_members GROUP BY project_id
+WITH cur AS (
+    SELECT id, name, planned_start_date, progress, late_count, created_at
+    FROM projects
+    WHERE display_id = $4
 )
 SELECT p.id, p.display_id, p.name, p.description, p.planned_start_date, p.planned_end_date,
        p.created_at, p.updated_at,
        EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $1) AS is_admin,
-       COALESCE(members.member_count, 0) AS member_count,
-       COALESCE(stats.not_started, 0) AS not_started,
-       COALESCE(stats.in_progress, 0) AS in_progress,
-       COALESCE(stats.done, 0) AS done,
-       COALESCE(stats.late, 0) AS late,
-       CASE WHEN COALESCE(stats.not_started, 0) + COALESCE(stats.in_progress, 0) + COALESCE(stats.done, 0) = 0 THEN 0
-            ELSE ROUND(COALESCE(stats.done, 0) * 100.0 / (COALESCE(stats.not_started, 0) + COALESCE(stats.in_progress, 0) + COALESCE(stats.done, 0)), 2)
-       END::float8 AS progress
+       p.member_count,
+       p.task_count_not_started AS not_started,
+       p.task_count_in_progress AS in_progress,
+       p.task_count_done AS done,
+       p.late_count AS late,
+       p.blocked_count,
+       p.progress
 FROM projects p
-LEFT JOIN stats ON stats.project_id = p.id
-LEFT JOIN members ON members.project_id = p.id
+LEFT JOIN cur ON TRUE
 WHERE ($2::boolean
    OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $1))
-  AND (NOT $3::boolean OR COALESCE(stats.late, 0) > 0)
+  AND (NOT $3::boolean OR p.late_count > 0)
+  AND ($4::text = '' OR (cur.id IS NOT NULL AND CASE
+        WHEN $5::text = 'name' AND $6::text = 'desc' THEN (p.name, p.id) < (cur.name, cur.id)
+        WHEN $5::text = 'name' THEN (p.name, p.id) > (cur.name, cur.id)
+        WHEN $5::text = 'start_date' AND $6::text = 'desc' THEN (p.planned_start_date, p.id) < (cur.planned_start_date, cur.id)
+        WHEN $5::text = 'start_date' THEN (p.planned_start_date, p.id) > (cur.planned_start_date, cur.id)
+        WHEN $5::text = 'progress' AND $6::text = 'desc' THEN (p.progress, p.id) < (cur.progress, cur.id)
+        WHEN $5::text = 'progress' THEN (p.progress, p.id) > (cur.progress, cur.id)
+        WHEN $5::text = 'late' AND $6::text = 'desc' THEN (p.late_count, p.id) < (cur.late_count, cur.id)
+        WHEN $5::text = 'late' THEN (p.late_count, p.id) > (cur.late_count, cur.id)
+        WHEN $5::text = 'created' AND $6::text = 'desc' THEN (p.created_at, p.id) < (cur.created_at, cur.id)
+        WHEN $5::text = 'created' THEN (p.created_at, p.id) > (cur.created_at, cur.id)
+        ELSE p.id > cur.id
+      END))
 ORDER BY
-  CASE WHEN $4::text = 'name' AND $5::text = 'asc' THEN p.name END ASC,
-  CASE WHEN $4::text = 'name' AND $5::text = 'desc' THEN p.name END DESC,
-  CASE WHEN $4::text = 'start_date' AND $5::text = 'asc' THEN p.planned_start_date END ASC,
-  CASE WHEN $4::text = 'start_date' AND $5::text = 'desc' THEN p.planned_start_date END DESC,
-  CASE WHEN $4::text = 'progress' AND $5::text = 'asc' THEN
-       CASE WHEN COALESCE(stats.not_started, 0) + COALESCE(stats.in_progress, 0) + COALESCE(stats.done, 0) = 0 THEN 0
-            ELSE COALESCE(stats.done, 0)::float8 / (COALESCE(stats.not_started, 0) + COALESCE(stats.in_progress, 0) + COALESCE(stats.done, 0)) END
-  END ASC,
-  CASE WHEN $4::text = 'progress' AND $5::text = 'desc' THEN
-       CASE WHEN COALESCE(stats.not_started, 0) + COALESCE(stats.in_progress, 0) + COALESCE(stats.done, 0) = 0 THEN 0
-            ELSE COALESCE(stats.done, 0)::float8 / (COALESCE(stats.not_started, 0) + COALESCE(stats.in_progress, 0) + COALESCE(stats.done, 0)) END
-  END DESC,
-  CASE WHEN $4::text = 'late' AND $5::text = 'asc' THEN COALESCE(stats.late, 0) END ASC,
-  CASE WHEN $4::text = 'late' AND $5::text = 'desc' THEN COALESCE(stats.late, 0) END DESC,
-  p.created_at DESC
+  CASE WHEN $5::text = 'created' AND $6::text = 'asc' THEN p.created_at END ASC,
+  CASE WHEN $5::text = 'created' AND $6::text = 'desc' THEN p.created_at END DESC,
+  CASE WHEN $5::text = 'name' AND $6::text = 'asc' THEN p.name END ASC,
+  CASE WHEN $5::text = 'name' AND $6::text = 'desc' THEN p.name END DESC,
+  CASE WHEN $5::text = 'start_date' AND $6::text = 'asc' THEN p.planned_start_date END ASC,
+  CASE WHEN $5::text = 'start_date' AND $6::text = 'desc' THEN p.planned_start_date END DESC,
+  CASE WHEN $5::text = 'progress' AND $6::text = 'asc' THEN p.progress END ASC,
+  CASE WHEN $5::text = 'progress' AND $6::text = 'desc' THEN p.progress END DESC,
+  CASE WHEN $5::text = 'late' AND $6::text = 'asc' THEN p.late_count END ASC,
+  CASE WHEN $5::text = 'late' AND $6::text = 'desc' THEN p.late_count END DESC,
+  CASE WHEN $6::text = 'desc' THEN p.id END DESC,
+  CASE WHEN $6::text = 'asc' THEN p.id END ASC
 LIMIT $7
-OFFSET $6
 `
 
 type ListProjectsParams struct {
 	UserID     uuid.UUID
 	SuperAdmin bool
 	LateOnly   bool
+	AfterID    string
 	SortBy     string
 	SortDir    string
-	PageOffset int32
 	PageLimit  int32
 }
 
@@ -361,12 +364,13 @@ type ListProjectsRow struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	IsAdmin          bool
-	MemberCount      int64
-	NotStarted       int64
-	InProgress       int64
-	Done             int64
-	Late             int64
-	Progress         float64
+	MemberCount      int32
+	NotStarted       int32
+	InProgress       int32
+	Done             int32
+	Late             int32
+	BlockedCount     int32
+	Progress         pgtype.Float8
 }
 
 func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]ListProjectsRow, error) {
@@ -374,9 +378,9 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]L
 		arg.UserID,
 		arg.SuperAdmin,
 		arg.LateOnly,
+		arg.AfterID,
 		arg.SortBy,
 		arg.SortDir,
-		arg.PageOffset,
 		arg.PageLimit,
 	)
 	if err != nil {
@@ -401,6 +405,7 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]L
 			&i.InProgress,
 			&i.Done,
 			&i.Late,
+			&i.BlockedCount,
 			&i.Progress,
 		); err != nil {
 			return nil, err
@@ -437,49 +442,6 @@ func (q *Queries) LockProjectAdmins(ctx context.Context, projectID uuid.UUID) ([
 	return items, nil
 }
 
-const projectBlockedCounts = `-- name: ProjectBlockedCounts :many
-WITH RECURSIVE reach AS (
-    SELECT t.id AS task_id, t.project_id, td.depends_on AS upstream
-    FROM tasks t
-    JOIN task_dependencies td ON td.task_id = t.id
-    WHERE t.project_id = ANY($1::uuid[])
-    UNION
-    SELECT r.task_id, r.project_id, td.depends_on
-    FROM task_dependencies td
-    JOIN reach r ON td.task_id = r.upstream
-)
-SELECT r.project_id, COUNT(DISTINCT r.task_id) AS blocked
-FROM reach r
-JOIN tasks u ON u.id = r.upstream
-WHERE u.status <> 'done'
-GROUP BY r.project_id
-`
-
-type ProjectBlockedCountsRow struct {
-	ProjectID uuid.UUID
-	Blocked   int64
-}
-
-func (q *Queries) ProjectBlockedCounts(ctx context.Context, projectIds []uuid.UUID) ([]ProjectBlockedCountsRow, error) {
-	rows, err := q.db.Query(ctx, projectBlockedCounts, projectIds)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ProjectBlockedCountsRow{}
-	for rows.Next() {
-		var i ProjectBlockedCountsRow
-		if err := rows.Scan(&i.ProjectID, &i.Blocked); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const removeProjectMember = `-- name: RemoveProjectMember :execrows
 DELETE FROM project_members WHERE project_id = $1 AND user_id = $2
 `
@@ -498,42 +460,34 @@ func (q *Queries) RemoveProjectMember(ctx context.Context, arg RemoveProjectMemb
 }
 
 const searchProjects = `-- name: SearchProjects :many
-WITH stats AS (
-    SELECT project_id,
-           COUNT(*) FILTER (WHERE status = 'not_started') AS not_started,
-           COUNT(*) FILTER (WHERE status = 'in_progress') AS in_progress,
-           COUNT(*) FILTER (WHERE status = 'done') AS done,
-           COUNT(*) FILTER (WHERE (status = 'not_started' AND planned_start_date < CURRENT_DATE)
-                              OR (status = 'in_progress' AND planned_end_date < CURRENT_DATE)) AS late
-    FROM tasks
-    GROUP BY project_id
-), members AS (
-    SELECT project_id, COUNT(*) AS member_count FROM project_members GROUP BY project_id
+WITH cur AS (
+    SELECT id, ts_rank_cd(search, websearch_to_tsquery('english', $1)) AS rank
+    FROM projects
+    WHERE display_id = $5
 )
 SELECT p.id, p.display_id, p.name, p.description, p.planned_start_date, p.planned_end_date,
        p.created_at, p.updated_at,
        ts_rank_cd(p.search, websearch_to_tsquery('english', $1)) AS rank,
        EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $2) AS is_admin,
-       COALESCE(members.member_count, 0) AS member_count,
-       COALESCE(stats.not_started, 0) AS not_started,
-       COALESCE(stats.in_progress, 0) AS in_progress,
-       COALESCE(stats.done, 0) AS done,
-       COALESCE(stats.late, 0) AS late,
-       CASE WHEN COALESCE(stats.not_started, 0) + COALESCE(stats.in_progress, 0) + COALESCE(stats.done, 0) = 0 THEN 0
-            ELSE ROUND(COALESCE(stats.done, 0) * 100.0 / (COALESCE(stats.not_started, 0) + COALESCE(stats.in_progress, 0) + COALESCE(stats.done, 0)), 2)
-       END::float8 AS progress
+       p.member_count,
+       p.task_count_not_started AS not_started,
+       p.task_count_in_progress AS in_progress,
+       p.task_count_done AS done,
+       p.late_count AS late,
+       p.blocked_count,
+       p.progress
 FROM projects p
-LEFT JOIN stats ON stats.project_id = p.id
-LEFT JOIN members ON members.project_id = p.id
+LEFT JOIN cur ON TRUE
 WHERE ($3::boolean
    OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = $2))
   AND (p.search @@ websearch_to_tsquery('english', $1)
    OR p.name ILIKE '%' || $1 || '%'
    OR p.display_id ILIKE '%' || $1 || '%')
-  AND (NOT $4::boolean OR COALESCE(stats.late, 0) > 0)
-ORDER BY rank DESC, p.created_at DESC
+  AND (NOT $4::boolean OR p.late_count > 0)
+  AND ($5::text = ''
+   OR (cur.id IS NOT NULL AND (ts_rank_cd(p.search, websearch_to_tsquery('english', $1)), p.id) < (cur.rank, cur.id)))
+ORDER BY rank DESC, p.id DESC
 LIMIT $6
-OFFSET $5
 `
 
 type SearchProjectsParams struct {
@@ -541,7 +495,7 @@ type SearchProjectsParams struct {
 	UserID     uuid.UUID
 	SuperAdmin bool
 	LateOnly   bool
-	PageOffset int32
+	AfterID    string
 	PageLimit  int32
 }
 
@@ -556,12 +510,13 @@ type SearchProjectsRow struct {
 	UpdatedAt        time.Time
 	Rank             float32
 	IsAdmin          bool
-	MemberCount      int64
-	NotStarted       int64
-	InProgress       int64
-	Done             int64
-	Late             int64
-	Progress         float64
+	MemberCount      int32
+	NotStarted       int32
+	InProgress       int32
+	Done             int32
+	Late             int32
+	BlockedCount     int32
+	Progress         pgtype.Float8
 }
 
 func (q *Queries) SearchProjects(ctx context.Context, arg SearchProjectsParams) ([]SearchProjectsRow, error) {
@@ -570,7 +525,7 @@ func (q *Queries) SearchProjects(ctx context.Context, arg SearchProjectsParams) 
 		arg.UserID,
 		arg.SuperAdmin,
 		arg.LateOnly,
-		arg.PageOffset,
+		arg.AfterID,
 		arg.PageLimit,
 	)
 	if err != nil {
@@ -596,6 +551,7 @@ func (q *Queries) SearchProjects(ctx context.Context, arg SearchProjectsParams) 
 			&i.InProgress,
 			&i.Done,
 			&i.Late,
+			&i.BlockedCount,
 			&i.Progress,
 		); err != nil {
 			return nil, err
@@ -634,7 +590,7 @@ SET name = $2,
     planned_end_date = $5,
     updated_at = NOW()
 WHERE display_id = $1
-RETURNING id, display_id, name, description, planned_start_date, planned_end_date, created_at, updated_at
+RETURNING id, display_id, name, description, planned_start_date, planned_end_date, created_at, updated_at, member_count, task_count_not_started, task_count_in_progress, task_count_done, late_count, blocked_count, progress
 `
 
 type UpdateProjectParams struct {
@@ -646,14 +602,21 @@ type UpdateProjectParams struct {
 }
 
 type UpdateProjectRow struct {
-	ID               uuid.UUID
-	DisplayID        string
-	Name             string
-	Description      string
-	PlannedStartDate time.Time
-	PlannedEndDate   time.Time
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                  uuid.UUID
+	DisplayID           string
+	Name                string
+	Description         string
+	PlannedStartDate    time.Time
+	PlannedEndDate      time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	MemberCount         int32
+	TaskCountNotStarted int32
+	TaskCountInProgress int32
+	TaskCountDone       int32
+	LateCount           int32
+	BlockedCount        int32
+	Progress            pgtype.Float8
 }
 
 func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (UpdateProjectRow, error) {
@@ -674,6 +637,13 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (U
 		&i.PlannedEndDate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MemberCount,
+		&i.TaskCountNotStarted,
+		&i.TaskCountInProgress,
+		&i.TaskCountDone,
+		&i.LateCount,
+		&i.BlockedCount,
+		&i.Progress,
 	)
 	return i, err
 }

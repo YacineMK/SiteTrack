@@ -18,8 +18,8 @@ var ErrInvalidInput = errors.New("invalid input")
 type Service interface {
 	CreateFromCompany(ctx context.Context, actorID uuid.UUID, req CreateCompanyDeliveryRequest) (DeliveryResponse, error)
 	CreateFromProject(ctx context.Context, projectDisplayID string, actorID uuid.UUID, req CreateProjectDeliveryRequest) (DeliveryResponse, error)
-	ListCompany(ctx context.Context, status, query, direction, fromDate, toDate, projectDisplayID string, limit, offset int32) (ListDeliveriesResponse, error)
-	ListProject(ctx context.Context, projectDisplayID, status, query, direction, fromDate, toDate string, limit, offset int32) (ListDeliveriesResponse, error)
+	ListCompany(ctx context.Context, status, query, direction, fromDate, toDate, projectDisplayID string, limit int32, after string) (ListDeliveriesResponse, error)
+	ListProject(ctx context.Context, projectDisplayID, status, query, direction, fromDate, toDate string, limit int32, after string) (ListDeliveriesResponse, error)
 	Get(ctx context.Context, actorID uuid.UUID, role, id string) (DeliveryResponse, error)
 	Record(ctx context.Context, actorID uuid.UUID, role, id string) (DeliveryResponse, error)
 	Reject(ctx context.Context, actorID uuid.UUID, role, id string) (DeliveryResponse, error)
@@ -94,9 +94,14 @@ func (s *service) CreateFromProject(ctx context.Context, projectDisplayID string
 	return s.utils.ToResponse(delivery), nil
 }
 
-func (s *service) ListCompany(ctx context.Context, status, query, direction, fromDate, toDate, projectDisplayID string, limit, offset int32) (ListDeliveriesResponse, error) {
+func (s *service) ListCompany(ctx context.Context, status, query, direction, fromDate, toDate, projectDisplayID string, limit int32, after string) (ListDeliveriesResponse, error) {
 	if !validStatus(status) || !validDirection(direction) || !validDateRange(fromDate, toDate) {
 		return ListDeliveriesResponse{}, ErrInvalidInput
+	}
+	if after != "" {
+		if _, err := uuid.Parse(after); err != nil {
+			return ListDeliveriesResponse{}, ErrInvalidInput
+		}
 	}
 
 	var projectID uuid.UUID
@@ -108,19 +113,24 @@ func (s *service) ListCompany(ctx context.Context, status, query, direction, fro
 		projectID = project.ID
 	}
 
-	limit, offset = s.utils.NormalizePagination(limit, offset)
+	limit = s.utils.NormalizeLimit(limit)
 
-	deliveries, total, err := s.repo.ListCompany(ctx, status, query, direction, fromDate, toDate, projectID, limit, offset)
+	deliveries, total, err := s.repo.ListCompany(ctx, status, query, direction, fromDate, toDate, projectID, limit, after)
 	if err != nil {
 		return ListDeliveriesResponse{}, err
 	}
 
-	return s.utils.ListResponse(deliveries, total, limit, offset), nil
+	return s.utils.ListResponse(deliveries, total, limit), nil
 }
 
-func (s *service) ListProject(ctx context.Context, projectDisplayID, status, query, direction, fromDate, toDate string, limit, offset int32) (ListDeliveriesResponse, error) {
+func (s *service) ListProject(ctx context.Context, projectDisplayID, status, query, direction, fromDate, toDate string, limit int32, after string) (ListDeliveriesResponse, error) {
 	if !validStatus(status) || !validDirection(direction) || !validDateRange(fromDate, toDate) {
 		return ListDeliveriesResponse{}, ErrInvalidInput
+	}
+	if after != "" {
+		if _, err := uuid.Parse(after); err != nil {
+			return ListDeliveriesResponse{}, ErrInvalidInput
+		}
 	}
 
 	project, err := s.projects.GetByDisplayID(ctx, projectDisplayID)
@@ -128,14 +138,14 @@ func (s *service) ListProject(ctx context.Context, projectDisplayID, status, que
 		return ListDeliveriesResponse{}, err
 	}
 
-	limit, offset = s.utils.NormalizePagination(limit, offset)
+	limit = s.utils.NormalizeLimit(limit)
 
-	deliveries, total, err := s.repo.ListProject(ctx, project.ID, status, query, direction, fromDate, toDate, limit, offset)
+	deliveries, total, err := s.repo.ListProject(ctx, project.ID, status, query, direction, fromDate, toDate, limit, after)
 	if err != nil {
 		return ListDeliveriesResponse{}, err
 	}
 
-	return s.utils.ListResponse(deliveries, total, limit, offset), nil
+	return s.utils.ListResponse(deliveries, total, limit), nil
 }
 
 func (s *service) Get(ctx context.Context, actorID uuid.UUID, role, id string) (DeliveryResponse, error) {

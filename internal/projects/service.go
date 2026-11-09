@@ -19,8 +19,8 @@ var ErrInvalidInput = errors.New("invalid input")
 type Service interface {
 	Create(ctx context.Context, userID uuid.UUID, req CreateProjectRequest) (ProjectResponse, error)
 	Get(ctx context.Context, displayID string, isAdmin bool) (ProjectResponse, error)
-	List(ctx context.Context, userID uuid.UUID, superAdmin, lateOnly bool, sortBy, sortDir string, limit, offset int32) (ListProjectsResponse, error)
-	Search(ctx context.Context, userID uuid.UUID, superAdmin, lateOnly bool, query string, limit, offset int32) (ListProjectsResponse, error)
+	List(ctx context.Context, userID uuid.UUID, superAdmin, lateOnly bool, sortBy, sortDir string, limit int32, after string) (ListProjectsResponse, error)
+	Search(ctx context.Context, userID uuid.UUID, superAdmin, lateOnly bool, query string, limit int32, after string) (ListProjectsResponse, error)
 	Update(ctx context.Context, displayID string, isAdmin bool, req UpdateProjectRequest) (ProjectResponse, error)
 	Delete(ctx context.Context, displayID string) error
 	ListMembers(ctx context.Context, projectID uuid.UUID) (ListMembersResponse, error)
@@ -93,9 +93,9 @@ func (s *service) Get(ctx context.Context, displayID string, isAdmin bool) (Proj
 	return s.utils.ToResponse(project), nil
 }
 
-func (s *service) List(ctx context.Context, userID uuid.UUID, superAdmin, lateOnly bool, sortBy, sortDir string, limit, offset int32) (ListProjectsResponse, error) {
+func (s *service) List(ctx context.Context, userID uuid.UUID, superAdmin, lateOnly bool, sortBy, sortDir string, limit int32, after string) (ListProjectsResponse, error) {
 	switch sortBy {
-	case "", "name", "start_date", "progress", "late":
+	case "", "created", "name", "start_date", "progress", "late":
 	default:
 		return ListProjectsResponse{}, ErrInvalidInput
 	}
@@ -104,29 +104,39 @@ func (s *service) List(ctx context.Context, userID uuid.UUID, superAdmin, lateOn
 	default:
 		return ListProjectsResponse{}, ErrInvalidInput
 	}
-	limit, offset = s.utils.NormalizePagination(limit, offset)
+	if sortBy == "" {
+		sortBy = "created"
+	}
+	if sortDir == "" {
+		if sortBy == "created" {
+			sortDir = "desc"
+		} else {
+			sortDir = "asc"
+		}
+	}
+	limit = s.utils.NormalizeLimit(limit)
 
-	items, total, err := s.repo.List(ctx, userID, superAdmin, lateOnly, sortBy, sortDir, limit, offset)
+	items, total, err := s.repo.List(ctx, userID, superAdmin, lateOnly, sortBy, sortDir, limit, after)
 	if err != nil {
 		return ListProjectsResponse{}, err
 	}
 
-	return s.utils.ListResponse(items, total, limit, offset), nil
+	return s.utils.ListResponse(items, total, limit), nil
 }
 
-func (s *service) Search(ctx context.Context, userID uuid.UUID, superAdmin, lateOnly bool, query string, limit, offset int32) (ListProjectsResponse, error) {
+func (s *service) Search(ctx context.Context, userID uuid.UUID, superAdmin, lateOnly bool, query string, limit int32, after string) (ListProjectsResponse, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return ListProjectsResponse{}, ErrInvalidInput
 	}
-	limit, offset = s.utils.NormalizePagination(limit, offset)
+	limit = s.utils.NormalizeLimit(limit)
 
-	items, total, err := s.repo.Search(ctx, userID, superAdmin, lateOnly, query, limit, offset)
+	items, total, err := s.repo.Search(ctx, userID, superAdmin, lateOnly, query, limit, after)
 	if err != nil {
 		return ListProjectsResponse{}, err
 	}
 
-	return s.utils.ListResponse(items, total, limit, offset), nil
+	return s.utils.ListResponse(items, total, limit), nil
 }
 
 func (s *service) Update(ctx context.Context, displayID string, isAdmin bool, req UpdateProjectRequest) (ProjectResponse, error) {
