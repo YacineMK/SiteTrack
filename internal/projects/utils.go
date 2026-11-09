@@ -11,6 +11,7 @@ import (
 type Utils interface {
 	ToResponse(project Project) ProjectResponse
 	ListResponse(projects []Project, total int64, limit, offset int32) ListProjectsResponse
+	MembersResponse(members []Member) ListMembersResponse
 	WriteServiceError(w http.ResponseWriter, err error)
 	ParseDates(start, end string) (time.Time, time.Time, error)
 	NormalizePagination(limit, offset int32) (int32, int32)
@@ -29,6 +30,7 @@ func (utils) ToResponse(project Project) ProjectResponse {
 		Description:      project.Description,
 		PlannedStartDate: project.PlannedStartDate.Format(dateLayout),
 		PlannedEndDate:   project.PlannedEndDate.Format(dateLayout),
+		IsAdmin:          project.IsAdmin,
 		CreatedAt:        project.CreatedAt,
 		UpdatedAt:        project.UpdatedAt,
 	}
@@ -47,12 +49,30 @@ func (u utils) ListResponse(projects []Project, total int64, limit, offset int32
 	}
 }
 
+func (utils) MembersResponse(members []Member) ListMembersResponse {
+	items := make([]MemberResponse, 0, len(members))
+	for _, member := range members {
+		items = append(items, MemberResponse{
+			UserID:    member.UserID,
+			Name:      member.Name,
+			Email:     member.Email,
+			IsAdmin:   member.IsAdmin,
+			CreatedAt: member.CreatedAt,
+		})
+	}
+	return ListMembersResponse{Items: items, Total: int64(len(items))}
+}
+
 func (utils) WriteServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrInvalidInput):
 		jsonutil.Error(w, http.StatusBadRequest, "invalid input")
 	case errors.Is(err, ErrNotFound):
 		jsonutil.Error(w, http.StatusNotFound, "project not found")
+	case errors.Is(err, ErrMemberNotFound):
+		jsonutil.Error(w, http.StatusNotFound, "project member not found")
+	case errors.Is(err, ErrLastAdmin):
+		jsonutil.Error(w, http.StatusConflict, "project must keep at least one admin")
 	default:
 		jsonutil.Error(w, http.StatusInternalServerError, "internal server error")
 	}

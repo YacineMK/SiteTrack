@@ -1,9 +1,11 @@
 package projects
 
 import (
+	"errors"
 	"time"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
+	"github.com/google/uuid"
 )
 
 const dateLayout = "2006-01-02"
@@ -46,8 +48,33 @@ type ProjectResponse struct {
 	Description      string    `json:"description"`
 	PlannedStartDate string    `json:"planned_start_date"`
 	PlannedEndDate   string    `json:"planned_end_date"`
+	IsAdmin          bool      `json:"is_admin"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+type MemberResponse struct {
+	UserID    uuid.UUID `json:"user_id"`
+	Name      string    `json:"name"`
+	Email     string    `json:"email"`
+	IsAdmin   bool      `json:"is_admin"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type ListMembersResponse struct {
+	Items []MemberResponse `json:"items"`
+	Total int64            `json:"total"`
+}
+
+type UpdateMemberRequest struct {
+	IsAdmin *bool `json:"is_admin"`
+}
+
+func (r UpdateMemberRequest) Validate() error {
+	if r.IsAdmin == nil {
+		return errors.New("is_admin is required")
+	}
+	return nil
 }
 
 type ListProjectsResponse struct {

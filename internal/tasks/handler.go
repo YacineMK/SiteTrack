@@ -6,16 +6,18 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/YacineMK/SiteTrack/internal/middleware"
 	jsonutil "github.com/YacineMK/SiteTrack/kit/json"
 )
 
 type Handler struct {
-	svc   Service
-	utils Utils
+	svc    Service
+	utils  Utils
+	access middleware.ProjectAccess
 }
 
-func NewHandler(svc Service) *Handler {
-	return &Handler{svc: svc, utils: NewUtils()}
+func NewHandler(svc Service, access middleware.ProjectAccess) *Handler {
+	return &Handler{svc: svc, utils: NewUtils(), access: access}
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {

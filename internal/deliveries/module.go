@@ -11,6 +11,7 @@ import (
 type Dependencies struct {
 	DB      *pgxpool.Pool
 	Checker middleware.PolicyChecker
+	Access  middleware.ProjectAccess
 }
 
 type Module struct {
@@ -19,7 +20,7 @@ type Module struct {
 
 func New(deps Dependencies) *Module {
 	svc := NewService(NewPostgresRepository(deps.DB), projects.NewPostgresRepository(deps.DB))
-	return &Module{handler: NewHandler(svc, deps.Checker)}
+	return &Module{handler: NewHandler(svc, deps.Checker, deps.Access)}
 }
 
 func (m *Module) Routes(r chi.Router) {

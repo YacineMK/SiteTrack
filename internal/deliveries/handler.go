@@ -14,10 +14,11 @@ type Handler struct {
 	svc     Service
 	utils   Utils
 	checker middleware.PolicyChecker
+	access  middleware.ProjectAccess
 }
 
-func NewHandler(svc Service, checker middleware.PolicyChecker) *Handler {
-	return &Handler{svc: svc, utils: NewUtils(), checker: checker}
+func NewHandler(svc Service, checker middleware.PolicyChecker, access middleware.ProjectAccess) *Handler {
+	return &Handler{svc: svc, utils: NewUtils(), checker: checker, access: access}
 }
 
 func (h *Handler) createCompany(w http.ResponseWriter, r *http.Request) {

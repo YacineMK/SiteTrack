@@ -4,14 +4,16 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/YacineMK/SiteTrack/internal/middleware"
 	"github.com/YacineMK/SiteTrack/internal/projects"
 	ids "github.com/YacineMK/SiteTrack/kit/idgen"
 	kitredis "github.com/YacineMK/SiteTrack/kit/redis"
 )
 
 type Dependencies struct {
-	DB    *pgxpool.Pool
-	Redis *kitredis.Redis
+	DB     *pgxpool.Pool
+	Redis  *kitredis.Redis
+	Access middleware.ProjectAccess
 }
 
 type Module struct {
@@ -24,7 +26,7 @@ func New(deps Dependencies) *Module {
 		projects.NewPostgresRepository(deps.DB),
 		ids.New(deps.Redis, deps.DB),
 	)
-	return &Module{handler: NewHandler(svc)}
+	return &Module{handler: NewHandler(svc, deps.Access)}
 }
 
 func (m *Module) Routes(r chi.Router) {

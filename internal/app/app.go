@@ -35,6 +35,7 @@ type App struct {
 
 func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtManager *kitjwt.Manager, cookieSecure bool, notificationHub *notifications.Hub) *App {
 	rolesModule := roles.New(roles.Dependencies{DB: postgres.Pool})
+	projectsModule := projects.New(projects.Dependencies{DB: postgres.Pool, Redis: redis})
 
 	authModule := auth.New(auth.Dependencies{
 		DB:           postgres.Pool,
@@ -51,10 +52,10 @@ func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtMan
 			materials.New(materials.Dependencies{DB: postgres.Pool}),
 			companystore.New(companystore.Dependencies{DB: postgres.Pool, Checker: rolesModule.Checker()}),
 			rolesModule,
-			projects.New(projects.Dependencies{DB: postgres.Pool, Redis: redis}),
-			projectstore.New(projectstore.Dependencies{DB: postgres.Pool}),
-			tasks.New(tasks.Dependencies{DB: postgres.Pool, Redis: redis}),
-			deliveries.New(deliveries.Dependencies{DB: postgres.Pool, Checker: rolesModule.Checker()}),
+			projectsModule,
+			projectstore.New(projectstore.Dependencies{DB: postgres.Pool, Access: projectsModule.Access()}),
+			tasks.New(tasks.Dependencies{DB: postgres.Pool, Redis: redis, Access: projectsModule.Access()}),
+			deliveries.New(deliveries.Dependencies{DB: postgres.Pool, Checker: rolesModule.Checker(), Access: projectsModule.Access()}),
 			notifications.New(notifications.Dependencies{DB: postgres.Pool, Hub: notificationHub}),
 		},
 	}
