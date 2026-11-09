@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -29,7 +30,7 @@ type App struct {
 
 func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtManager *kitjwt.Manager, cookieSecure bool) *App {
 	rolesModule := roles.New(roles.Dependencies{DB: postgres.Pool})
-	authz := auth.NewAuthZ(rolesModule.Service())
+	authz := rolesModule.AuthZ()
 
 	authModule := auth.New(auth.Dependencies{
 		DB:           postgres.Pool,
@@ -56,4 +57,8 @@ func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtMan
 
 func (a *App) Run() error {
 	return a.server.Start()
+}
+
+func (a *App) Shutdown(ctx context.Context) error {
+	return a.server.Shutdown(ctx)
 }
