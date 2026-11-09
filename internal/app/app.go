@@ -12,6 +12,7 @@ import (
 	"github.com/YacineMK/SiteTrack/internal/materials"
 	"github.com/YacineMK/SiteTrack/internal/middleware"
 	"github.com/YacineMK/SiteTrack/internal/projects"
+	"github.com/YacineMK/SiteTrack/internal/projectstore"
 	"github.com/YacineMK/SiteTrack/internal/roles"
 	"github.com/YacineMK/SiteTrack/internal/server"
 	"github.com/YacineMK/SiteTrack/internal/tasks"
@@ -53,6 +54,7 @@ func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtMan
 			companystore.New(companystore.Dependencies{DB: postgres.Pool}),
 			rolesModule,
 			projects.New(projects.Dependencies{DB: postgres.Pool, Redis: redis}),
+			projectstore.New(projectstore.Dependencies{DB: postgres.Pool}),
 			tasks.New(tasks.Dependencies{DB: postgres.Pool, Redis: redis}),
 		},
 	}
