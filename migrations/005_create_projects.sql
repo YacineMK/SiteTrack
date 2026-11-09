@@ -1,4 +1,4 @@
--- +goose Up
+-- migrate:up
 CREATE TABLE projects (
     id                 UUID PRIMARY KEY,
     display_id         TEXT NOT NULL,
@@ -16,5 +16,5 @@ CREATE INDEX projects_planned_start_idx ON projects (planned_start_date);
 CREATE INDEX projects_planned_end_idx ON projects (planned_end_date);
 CREATE INDEX projects_created_at_idx ON projects (created_at DESC);
 
--- +goose Down
+-- migrate:down
 DROP TABLE projects;

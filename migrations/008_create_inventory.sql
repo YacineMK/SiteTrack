@@ -1,4 +1,4 @@
--- +goose Up
+-- migrate:up
 CREATE TABLE materials (
     id         UUID PRIMARY KEY,
     name       TEXT NOT NULL,
@@ -57,7 +57,7 @@ CREATE TABLE delivery_lines (
 
 CREATE INDEX delivery_lines_delivery_idx ON delivery_lines (delivery_id);
 
--- +goose Down
+-- migrate:down
 DROP TABLE delivery_lines;
 DROP TABLE deliveries;
 DROP TYPE delivery_status;

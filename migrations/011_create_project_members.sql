@@ -1,4 +1,4 @@
--- +goose Up
+-- migrate:up
 CREATE TABLE project_members (
     project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -9,5 +9,5 @@ CREATE TABLE project_members (
 
 CREATE INDEX project_members_user_idx ON project_members (user_id);
 
--- +goose Down
+-- migrate:down
 DROP TABLE project_members;

@@ -1,4 +1,4 @@
--- +goose Up
+-- migrate:up
 CREATE TABLE users (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL,
@@ -12,5 +12,5 @@ CREATE TABLE users (
 
 CREATE UNIQUE INDEX users_email_idx ON users (email);
 
--- +goose Down
+-- migrate:down
 DROP TABLE users;

@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sitetrack
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    env_file: .env
+    command: ["redis-server", "--port", "${REDIS_PORT}", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -p $$REDIS_PORT -a $$REDIS_PASSWORD ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sitetrack
+
+  migrate:
+    image: ghcr.io/amacneil/dbmate:latest
+    restart: "no"
+    env_file: .env
+    environment:
+      DATABASE_URL: ${PROD_DATABASE_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/db/migrations
+    command: ["--no-dump-schema", "up"]
+    networks:
+      - sitetrack
+
+  app:
+    build:
+      context: .
+      dockerfile: dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: ${PROD_DATABASE_URL}
+      REDIS_ADDR: ${PROD_REDIS_ADDR}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${APP_PORT}:${APP_PORT}"
+    networks:
+      - sitetrack
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  sitetrack:

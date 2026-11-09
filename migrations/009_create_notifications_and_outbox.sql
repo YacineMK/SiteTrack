@@ -1,4 +1,4 @@
--- +goose Up
+-- migrate:up
 CREATE TABLE notifications (
     id         UUID PRIMARY KEY,
     user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -30,6 +30,6 @@ CREATE TABLE outbox (
 
 CREATE INDEX outbox_due_idx ON outbox (next_attempt_at) WHERE status IN ('pending', 'processing');
 
--- +goose Down
+-- migrate:down
 DROP TABLE outbox;
 DROP TABLE notifications;

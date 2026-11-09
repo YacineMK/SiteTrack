@@ -1,4 +1,4 @@
--- +goose Up
+-- migrate:up
 CREATE TABLE tasks (
     id                 UUID PRIMARY KEY,
     display_id         TEXT NOT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE task_dependencies (
 
 CREATE INDEX task_dependencies_depends_on_idx ON task_dependencies (depends_on);
 
--- +goose Down
+-- migrate:down
 DROP TABLE task_dependencies;
 DROP TABLE task_id_counter;
 DROP TABLE tasks;

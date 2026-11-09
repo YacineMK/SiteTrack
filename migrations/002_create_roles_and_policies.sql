@@ -1,4 +1,4 @@
--- +goose Up
+-- migrate:up
 CREATE TABLE app_roles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT UNIQUE NOT NULL,
@@ -26,6 +26,6 @@ SELECT id, 'company_store', 'write' FROM app_roles WHERE name IN ('company_store
 INSERT INTO role_policies (role_id, resource, action)
 SELECT id, 'all_projects', 'read' FROM app_roles WHERE name = 'super_admin';
 
--- +goose Down
+-- migrate:down
 DROP TABLE role_policies;
 DROP TABLE app_roles;

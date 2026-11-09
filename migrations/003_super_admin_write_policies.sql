@@ -1,4 +1,4 @@
--- +goose Up
+-- migrate:up
 INSERT INTO role_policies (role_id, resource, action)
 SELECT id, 'all_projects', 'write' FROM app_roles WHERE name = 'super_admin'
 ON CONFLICT DO NOTHING;
@@ -10,7 +10,7 @@ WHERE rp.role_id = ar.id
   AND rp.action = 'read'
   AND rp.resource IN ('all_projects', 'company_store');
 
--- +goose Down
+-- migrate:down
 INSERT INTO role_policies (role_id, resource, action)
 SELECT id, 'all_projects', 'read' FROM app_roles WHERE name = 'super_admin'
 ON CONFLICT DO NOTHING;

@@ -1,6 +1,7 @@
 .PHONY: run build test tidy migrate
 
 DATABASE_URL ?= postgres://sitetrack:sitetrack@localhost:5432/sitetrack?sslmode=disable
+DBMATE_IMAGE ?= ghcr.io/amacneil/dbmate:latest
 
 run:
 	go run ./cmd
@@ -15,4 +16,4 @@ tidy:
 	go mod tidy
 
 migrate:
-	goose -dir migrations postgres "$(DATABASE_URL)" up
+	docker run --rm --network host -v "$(CURDIR)/migrations:/db/migrations" -e DATABASE_URL="$(DATABASE_URL)" $(DBMATE_IMAGE) --no-dump-schema up
