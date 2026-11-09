@@ -5,7 +5,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/sitetrack ./cmd
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/sitetrack ./cmd/api
 
 FROM alpine:3.20
 

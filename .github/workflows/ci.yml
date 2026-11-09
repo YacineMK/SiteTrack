@@ -15,3 +15,4 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go build ./...
+      - run: go build -o /tmp/api ./cmd/api && go build -o /tmp/seeder ./kit/seeder
