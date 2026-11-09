@@ -72,7 +72,7 @@ func (h *Handler) listCompany(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deliveries, err := h.svc.ListCompany(r.Context(), r.URL.Query().Get("status"), limit, offset)
+	deliveries, err := h.svc.ListCompany(r.Context(), r.URL.Query().Get("status"), r.URL.Query().Get("q"), limit, offset)
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return
@@ -87,7 +87,7 @@ func (h *Handler) listProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deliveries, err := h.svc.ListProject(r.Context(), chi.URLParam(r, "project_display_id"), r.URL.Query().Get("status"), limit, offset)
+	deliveries, err := h.svc.ListProject(r.Context(), chi.URLParam(r, "project_display_id"), r.URL.Query().Get("status"), r.URL.Query().Get("q"), limit, offset)
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return

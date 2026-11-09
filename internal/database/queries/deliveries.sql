@@ -39,6 +39,7 @@ SELECT d.id, d.sender_type, d.sender_id, d.receiver_type, d.receiver_id, d.statu
 FROM deliveries d
 WHERE (d.sender_type = 'company' OR d.receiver_type = 'company')
   AND (sqlc.arg(status_filter)::text = '' OR d.status::text = sqlc.arg(status_filter)::text)
+  AND (sqlc.arg(query)::text = '' OR d.id::text ILIKE '%' || sqlc.arg(query)::text || '%' OR EXISTS (SELECT 1 FROM delivery_lines dl JOIN materials m ON m.id = dl.material_id WHERE dl.delivery_id = d.id AND m.name ILIKE '%' || sqlc.arg(query)::text || '%') OR EXISTS (SELECT 1 FROM projects p WHERE (p.id = d.sender_id OR p.id = d.receiver_id) AND p.display_id ILIKE '%' || sqlc.arg(query)::text || '%'))
 ORDER BY d.sent_at DESC
 LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
 
@@ -46,13 +47,15 @@ LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
 SELECT COUNT(*)
 FROM deliveries d
 WHERE (d.sender_type = 'company' OR d.receiver_type = 'company')
-  AND (sqlc.arg(status_filter)::text = '' OR d.status::text = sqlc.arg(status_filter)::text);
+  AND (sqlc.arg(status_filter)::text = '' OR d.status::text = sqlc.arg(status_filter)::text)
+  AND (sqlc.arg(query)::text = '' OR d.id::text ILIKE '%' || sqlc.arg(query)::text || '%' OR EXISTS (SELECT 1 FROM delivery_lines dl JOIN materials m ON m.id = dl.material_id WHERE dl.delivery_id = d.id AND m.name ILIKE '%' || sqlc.arg(query)::text || '%') OR EXISTS (SELECT 1 FROM projects p WHERE (p.id = d.sender_id OR p.id = d.receiver_id) AND p.display_id ILIKE '%' || sqlc.arg(query)::text || '%'));
 
 -- name: ListProjectDeliveries :many
 SELECT d.id, d.sender_type, d.sender_id, d.receiver_type, d.receiver_id, d.status, d.sent_at, d.received_at, d.sent_by, d.received_by
 FROM deliveries d
 WHERE ((d.sender_type = 'project' AND d.sender_id = sqlc.arg(project_id)::uuid) OR (d.receiver_type = 'project' AND d.receiver_id = sqlc.arg(project_id)::uuid))
   AND (sqlc.arg(status_filter)::text = '' OR d.status::text = sqlc.arg(status_filter)::text)
+  AND (sqlc.arg(query)::text = '' OR d.id::text ILIKE '%' || sqlc.arg(query)::text || '%' OR EXISTS (SELECT 1 FROM delivery_lines dl JOIN materials m ON m.id = dl.material_id WHERE dl.delivery_id = d.id AND m.name ILIKE '%' || sqlc.arg(query)::text || '%') OR EXISTS (SELECT 1 FROM projects p WHERE (p.id = d.sender_id OR p.id = d.receiver_id) AND p.display_id ILIKE '%' || sqlc.arg(query)::text || '%'))
 ORDER BY d.sent_at DESC
 LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
 
@@ -60,4 +63,5 @@ LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
 SELECT COUNT(*)
 FROM deliveries d
 WHERE ((d.sender_type = 'project' AND d.sender_id = sqlc.arg(project_id)::uuid) OR (d.receiver_type = 'project' AND d.receiver_id = sqlc.arg(project_id)::uuid))
-  AND (sqlc.arg(status_filter)::text = '' OR d.status::text = sqlc.arg(status_filter)::text);
+  AND (sqlc.arg(status_filter)::text = '' OR d.status::text = sqlc.arg(status_filter)::text)
+  AND (sqlc.arg(query)::text = '' OR d.id::text ILIKE '%' || sqlc.arg(query)::text || '%' OR EXISTS (SELECT 1 FROM delivery_lines dl JOIN materials m ON m.id = dl.material_id WHERE dl.delivery_id = d.id AND m.name ILIKE '%' || sqlc.arg(query)::text || '%') OR EXISTS (SELECT 1 FROM projects p WHERE (p.id = d.sender_id OR p.id = d.receiver_id) AND p.display_id ILIKE '%' || sqlc.arg(query)::text || '%'));

@@ -15,8 +15,8 @@ var ErrInvalidInput = errors.New("invalid input")
 type Service interface {
 	CreateFromCompany(ctx context.Context, actorID uuid.UUID, req CreateCompanyDeliveryRequest) (DeliveryResponse, error)
 	CreateFromProject(ctx context.Context, projectDisplayID string, actorID uuid.UUID, req CreateProjectDeliveryRequest) (DeliveryResponse, error)
-	ListCompany(ctx context.Context, status string, limit, offset int32) (ListDeliveriesResponse, error)
-	ListProject(ctx context.Context, projectDisplayID, status string, limit, offset int32) (ListDeliveriesResponse, error)
+	ListCompany(ctx context.Context, status, query string, limit, offset int32) (ListDeliveriesResponse, error)
+	ListProject(ctx context.Context, projectDisplayID, status, query string, limit, offset int32) (ListDeliveriesResponse, error)
 	Get(ctx context.Context, actorID uuid.UUID, role, id string) (DeliveryResponse, error)
 	Record(ctx context.Context, actorID uuid.UUID, role, id string) (DeliveryResponse, error)
 	Reject(ctx context.Context, actorID uuid.UUID, role, id string) (DeliveryResponse, error)
@@ -91,14 +91,14 @@ func (s *service) CreateFromProject(ctx context.Context, projectDisplayID string
 	return s.utils.ToResponse(delivery), nil
 }
 
-func (s *service) ListCompany(ctx context.Context, status string, limit, offset int32) (ListDeliveriesResponse, error) {
+func (s *service) ListCompany(ctx context.Context, status, query string, limit, offset int32) (ListDeliveriesResponse, error) {
 	if !validStatus(status) {
 		return ListDeliveriesResponse{}, ErrInvalidInput
 	}
 
 	limit, offset = s.utils.NormalizePagination(limit, offset)
 
-	deliveries, total, err := s.repo.ListCompany(ctx, status, limit, offset)
+	deliveries, total, err := s.repo.ListCompany(ctx, status, query, limit, offset)
 	if err != nil {
 		return ListDeliveriesResponse{}, err
 	}
@@ -106,7 +106,7 @@ func (s *service) ListCompany(ctx context.Context, status string, limit, offset 
 	return s.utils.ListResponse(deliveries, total, limit, offset), nil
 }
 
-func (s *service) ListProject(ctx context.Context, projectDisplayID, status string, limit, offset int32) (ListDeliveriesResponse, error) {
+func (s *service) ListProject(ctx context.Context, projectDisplayID, status, query string, limit, offset int32) (ListDeliveriesResponse, error) {
 	if !validStatus(status) {
 		return ListDeliveriesResponse{}, ErrInvalidInput
 	}
@@ -118,7 +118,7 @@ func (s *service) ListProject(ctx context.Context, projectDisplayID, status stri
 
 	limit, offset = s.utils.NormalizePagination(limit, offset)
 
-	deliveries, total, err := s.repo.ListProject(ctx, project.ID, status, limit, offset)
+	deliveries, total, err := s.repo.ListProject(ctx, project.ID, status, query, limit, offset)
 	if err != nil {
 		return ListDeliveriesResponse{}, err
 	}

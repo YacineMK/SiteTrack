@@ -50,10 +50,16 @@ SELECT COUNT(*)
 FROM deliveries d
 WHERE (d.sender_type = 'company' OR d.receiver_type = 'company')
   AND ($1::text = '' OR d.status::text = $1::text)
+  AND ($2::text = '' OR d.id::text ILIKE '%' || $2::text || '%' OR EXISTS (SELECT 1 FROM delivery_lines dl JOIN materials m ON m.id = dl.material_id WHERE dl.delivery_id = d.id AND m.name ILIKE '%' || $2::text || '%') OR EXISTS (SELECT 1 FROM projects p WHERE (p.id = d.sender_id OR p.id = d.receiver_id) AND p.display_id ILIKE '%' || $2::text || '%'))
 `
 
-func (q *Queries) CountCompanyDeliveries(ctx context.Context, statusFilter string) (int64, error) {
-	row := q.db.QueryRow(ctx, countCompanyDeliveries, statusFilter)
+type CountCompanyDeliveriesParams struct {
+	StatusFilter string
+	Query        string
+}
+
+func (q *Queries) CountCompanyDeliveries(ctx context.Context, arg CountCompanyDeliveriesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countCompanyDeliveries, arg.StatusFilter, arg.Query)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -64,15 +70,17 @@ SELECT COUNT(*)
 FROM deliveries d
 WHERE ((d.sender_type = 'project' AND d.sender_id = $1::uuid) OR (d.receiver_type = 'project' AND d.receiver_id = $1::uuid))
   AND ($2::text = '' OR d.status::text = $2::text)
+  AND ($3::text = '' OR d.id::text ILIKE '%' || $3::text || '%' OR EXISTS (SELECT 1 FROM delivery_lines dl JOIN materials m ON m.id = dl.material_id WHERE dl.delivery_id = d.id AND m.name ILIKE '%' || $3::text || '%') OR EXISTS (SELECT 1 FROM projects p WHERE (p.id = d.sender_id OR p.id = d.receiver_id) AND p.display_id ILIKE '%' || $3::text || '%'))
 `
 
 type CountProjectDeliveriesParams struct {
 	ProjectID    uuid.UUID
 	StatusFilter string
+	Query        string
 }
 
 func (q *Queries) CountProjectDeliveries(ctx context.Context, arg CountProjectDeliveriesParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countProjectDeliveries, arg.ProjectID, arg.StatusFilter)
+	row := q.db.QueryRow(ctx, countProjectDeliveries, arg.ProjectID, arg.StatusFilter, arg.Query)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -209,18 +217,25 @@ SELECT d.id, d.sender_type, d.sender_id, d.receiver_type, d.receiver_id, d.statu
 FROM deliveries d
 WHERE (d.sender_type = 'company' OR d.receiver_type = 'company')
   AND ($1::text = '' OR d.status::text = $1::text)
+  AND ($2::text = '' OR d.id::text ILIKE '%' || $2::text || '%' OR EXISTS (SELECT 1 FROM delivery_lines dl JOIN materials m ON m.id = dl.material_id WHERE dl.delivery_id = d.id AND m.name ILIKE '%' || $2::text || '%') OR EXISTS (SELECT 1 FROM projects p WHERE (p.id = d.sender_id OR p.id = d.receiver_id) AND p.display_id ILIKE '%' || $2::text || '%'))
 ORDER BY d.sent_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $4 OFFSET $3
 `
 
 type ListCompanyDeliveriesParams struct {
 	StatusFilter string
+	Query        string
 	PageOffset   int32
 	PageLimit    int32
 }
 
 func (q *Queries) ListCompanyDeliveries(ctx context.Context, arg ListCompanyDeliveriesParams) ([]Delivery, error) {
-	rows, err := q.db.Query(ctx, listCompanyDeliveries, arg.StatusFilter, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listCompanyDeliveries,
+		arg.StatusFilter,
+		arg.Query,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -255,13 +270,15 @@ SELECT d.id, d.sender_type, d.sender_id, d.receiver_type, d.receiver_id, d.statu
 FROM deliveries d
 WHERE ((d.sender_type = 'project' AND d.sender_id = $1::uuid) OR (d.receiver_type = 'project' AND d.receiver_id = $1::uuid))
   AND ($2::text = '' OR d.status::text = $2::text)
+  AND ($3::text = '' OR d.id::text ILIKE '%' || $3::text || '%' OR EXISTS (SELECT 1 FROM delivery_lines dl JOIN materials m ON m.id = dl.material_id WHERE dl.delivery_id = d.id AND m.name ILIKE '%' || $3::text || '%') OR EXISTS (SELECT 1 FROM projects p WHERE (p.id = d.sender_id OR p.id = d.receiver_id) AND p.display_id ILIKE '%' || $3::text || '%'))
 ORDER BY d.sent_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type ListProjectDeliveriesParams struct {
 	ProjectID    uuid.UUID
 	StatusFilter string
+	Query        string
 	PageOffset   int32
 	PageLimit    int32
 }
@@ -270,6 +287,7 @@ func (q *Queries) ListProjectDeliveries(ctx context.Context, arg ListProjectDeli
 	rows, err := q.db.Query(ctx, listProjectDeliveries,
 		arg.ProjectID,
 		arg.StatusFilter,
+		arg.Query,
 		arg.PageOffset,
 		arg.PageLimit,
 	)

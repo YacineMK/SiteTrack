@@ -53,8 +53,8 @@ type Delivery struct {
 type Repository interface {
 	Create(ctx context.Context, delivery Delivery) (Delivery, error)
 	Get(ctx context.Context, id uuid.UUID) (Delivery, error)
-	ListCompany(ctx context.Context, status string, limit, offset int32) ([]Delivery, int64, error)
-	ListProject(ctx context.Context, projectID uuid.UUID, status string, limit, offset int32) ([]Delivery, int64, error)
+	ListCompany(ctx context.Context, status, query string, limit, offset int32) ([]Delivery, int64, error)
+	ListProject(ctx context.Context, projectID uuid.UUID, status, query string, limit, offset int32) ([]Delivery, int64, error)
 	Transition(ctx context.Context, id uuid.UUID, status string, receivedBy *uuid.UUID) (Delivery, error)
 }
 
@@ -164,14 +164,15 @@ func (r *PostgresRepository) Get(ctx context.Context, id uuid.UUID) (Delivery, e
 	return delivery, nil
 }
 
-func (r *PostgresRepository) ListCompany(ctx context.Context, status string, limit, offset int32) ([]Delivery, int64, error) {
-	total, err := r.queries.CountCompanyDeliveries(ctx, status)
+func (r *PostgresRepository) ListCompany(ctx context.Context, status, query string, limit, offset int32) ([]Delivery, int64, error) {
+	total, err := r.queries.CountCompanyDeliveries(ctx, sqlc.CountCompanyDeliveriesParams{StatusFilter: status, Query: query})
 	if err != nil {
 		return nil, 0, err
 	}
 
 	rows, err := r.queries.ListCompanyDeliveries(ctx, sqlc.ListCompanyDeliveriesParams{
 		StatusFilter: status,
+		Query:        query,
 		PageLimit:    limit,
 		PageOffset:   offset,
 	})
@@ -182,10 +183,11 @@ func (r *PostgresRepository) ListCompany(ctx context.Context, status string, lim
 	return toDeliveries(rows), total, nil
 }
 
-func (r *PostgresRepository) ListProject(ctx context.Context, projectID uuid.UUID, status string, limit, offset int32) ([]Delivery, int64, error) {
+func (r *PostgresRepository) ListProject(ctx context.Context, projectID uuid.UUID, status, query string, limit, offset int32) ([]Delivery, int64, error) {
 	total, err := r.queries.CountProjectDeliveries(ctx, sqlc.CountProjectDeliveriesParams{
 		ProjectID:    projectID,
 		StatusFilter: status,
+		Query:        query,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -194,6 +196,7 @@ func (r *PostgresRepository) ListProject(ctx context.Context, projectID uuid.UUI
 	rows, err := r.queries.ListProjectDeliveries(ctx, sqlc.ListProjectDeliveriesParams{
 		ProjectID:    projectID,
 		StatusFilter: status,
+		Query:        query,
 		PageLimit:    limit,
 		PageOffset:   offset,
 	})
