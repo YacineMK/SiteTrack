@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/YacineMK/SiteTrack/internal/middleware"
 	jsonutil "github.com/YacineMK/SiteTrack/kit/json"
@@ -22,13 +23,19 @@ func NewHandler(svc Service, checker middleware.PolicyChecker, access middleware
 }
 
 func (h *Handler) createCompany(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := middleware.UserID(r.Context())
+	if !ok {
+		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	var req CreateCompanyDeliveryRequest
 	if err := jsonutil.DecodeJSON(r, &req); err != nil {
 		jsonutil.Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	delivery, err := h.svc.CreateFromCompany(r.Context(), req)
+	delivery, err := h.svc.CreateFromCompany(r.Context(), actorID, req)
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return
@@ -38,13 +45,19 @@ func (h *Handler) createCompany(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) createProject(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := middleware.UserID(r.Context())
+	if !ok {
+		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	var req CreateProjectDeliveryRequest
 	if err := jsonutil.DecodeJSON(r, &req); err != nil {
 		jsonutil.Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	delivery, err := h.svc.CreateFromProject(r.Context(), chi.URLParam(r, "project_display_id"), req)
+	delivery, err := h.svc.CreateFromProject(r.Context(), chi.URLParam(r, "project_display_id"), actorID, req)
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return
@@ -84,7 +97,13 @@ func (h *Handler) listProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
-	delivery, err := h.svc.Get(r.Context(), chi.URLParam(r, "delivery_id"))
+	actorID, role, ok := deliveryActor(r)
+	if !ok {
+		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	delivery, err := h.svc.Get(r.Context(), actorID, role, chi.URLParam(r, "delivery_id"))
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return
@@ -94,7 +113,13 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) record(w http.ResponseWriter, r *http.Request) {
-	delivery, err := h.svc.Record(r.Context(), chi.URLParam(r, "delivery_id"))
+	actorID, role, ok := deliveryActor(r)
+	if !ok {
+		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	delivery, err := h.svc.Record(r.Context(), actorID, role, chi.URLParam(r, "delivery_id"))
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return
@@ -104,7 +129,13 @@ func (h *Handler) record(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) reject(w http.ResponseWriter, r *http.Request) {
-	delivery, err := h.svc.Reject(r.Context(), chi.URLParam(r, "delivery_id"))
+	actorID, role, ok := deliveryActor(r)
+	if !ok {
+		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	delivery, err := h.svc.Reject(r.Context(), actorID, role, chi.URLParam(r, "delivery_id"))
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return
@@ -114,13 +145,28 @@ func (h *Handler) reject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) cancel(w http.ResponseWriter, r *http.Request) {
-	delivery, err := h.svc.Cancel(r.Context(), chi.URLParam(r, "delivery_id"))
+	actorID, role, ok := deliveryActor(r)
+	if !ok {
+		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	delivery, err := h.svc.Cancel(r.Context(), actorID, role, chi.URLParam(r, "delivery_id"))
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return
 	}
 
 	jsonutil.JSON(w, http.StatusOK, delivery)
+}
+
+func deliveryActor(r *http.Request) (uuid.UUID, string, bool) {
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		return uuid.UUID{}, "", false
+	}
+	role, _ := middleware.AppRole(r.Context())
+	return userID, role, true
 }
 
 func (h *Handler) pagination(w http.ResponseWriter, r *http.Request) (int32, int32, bool) {

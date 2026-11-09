@@ -73,6 +73,8 @@ type DeliveryResponse struct {
 	Status       string                 `json:"status"`
 	SentAt       time.Time              `json:"sent_at"`
 	ReceivedAt   *time.Time             `json:"received_at"`
+	SentBy       *uuid.UUID             `json:"sent_by"`
+	ReceivedBy   *uuid.UUID             `json:"received_by"`
 	Lines        []DeliveryLineResponse `json:"lines,omitempty"`
 }
 

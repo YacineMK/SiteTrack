@@ -45,6 +45,8 @@ type Delivery struct {
 	Status       string
 	SentAt       time.Time
 	ReceivedAt   *time.Time
+	SentBy       *uuid.UUID
+	ReceivedBy   *uuid.UUID
 	Lines        []Line
 }
 
@@ -53,7 +55,7 @@ type Repository interface {
 	Get(ctx context.Context, id uuid.UUID) (Delivery, error)
 	ListCompany(ctx context.Context, status string, limit, offset int32) ([]Delivery, int64, error)
 	ListProject(ctx context.Context, projectID uuid.UUID, status string, limit, offset int32) ([]Delivery, int64, error)
-	Transition(ctx context.Context, id uuid.UUID, status string) (Delivery, error)
+	Transition(ctx context.Context, id uuid.UUID, status string, receivedBy *uuid.UUID) (Delivery, error)
 }
 
 type PostgresRepository struct {
@@ -106,6 +108,7 @@ func (r *PostgresRepository) Create(ctx context.Context, delivery Delivery) (Del
 			SenderID:     toPgUUID(delivery.SenderID),
 			ReceiverType: sqlc.DeliveryParty(delivery.ReceiverType),
 			ReceiverID:   toPgUUID(delivery.ReceiverID),
+			SentBy:       toPgUUID(delivery.SentBy),
 		}); err != nil {
 			return err
 		}
@@ -201,7 +204,7 @@ func (r *PostgresRepository) ListProject(ctx context.Context, projectID uuid.UUI
 	return toDeliveries(rows), total, nil
 }
 
-func (r *PostgresRepository) Transition(ctx context.Context, id uuid.UUID, status string) (Delivery, error) {
+func (r *PostgresRepository) Transition(ctx context.Context, id uuid.UUID, status string, receivedBy *uuid.UUID) (Delivery, error) {
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		q := r.queries.WithTx(tx)
 
@@ -213,14 +216,24 @@ func (r *PostgresRepository) Transition(ctx context.Context, id uuid.UUID, statu
 			return err
 		}
 
-		if _, err := q.UpdateDeliveryStatus(ctx, sqlc.UpdateDeliveryStatusParams{
-			ID:     id,
-			Status: sqlc.DeliveryStatus(status),
-		}); err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
+		var updateErr error
+		if receivedBy != nil {
+			_, updateErr = q.CompleteDeliveryStatus(ctx, sqlc.CompleteDeliveryStatusParams{
+				ID:         id,
+				Status:     sqlc.DeliveryStatus(status),
+				ReceivedBy: toPgUUID(receivedBy),
+			})
+		} else {
+			_, updateErr = q.UpdateDeliveryStatus(ctx, sqlc.UpdateDeliveryStatusParams{
+				ID:     id,
+				Status: sqlc.DeliveryStatus(status),
+			})
+		}
+		if updateErr != nil {
+			if errors.Is(updateErr, pgx.ErrNoRows) {
 				return ErrInvalidTransition
 			}
-			return err
+			return updateErr
 		}
 
 		lines, err := q.GetDeliveryLines(ctx, id)
@@ -283,6 +296,8 @@ func toDelivery(row sqlc.Delivery) Delivery {
 		Status:       string(row.Status),
 		SentAt:       row.SentAt,
 		ReceivedAt:   fromPgTime(row.ReceivedAt),
+		SentBy:       fromPgUUID(row.SentBy),
+		ReceivedBy:   fromPgUUID(row.ReceivedBy),
 	}
 }
 

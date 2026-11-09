@@ -44,6 +44,8 @@ func (u utils) ToResponse(delivery Delivery) DeliveryResponse {
 		Status:       delivery.Status,
 		SentAt:       delivery.SentAt,
 		ReceivedAt:   delivery.ReceivedAt,
+		SentBy:       delivery.SentBy,
+		ReceivedBy:   delivery.ReceivedBy,
 		Lines:        lines,
 	}
 }
