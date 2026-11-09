@@ -43,6 +43,21 @@ services:
     networks:
       - sitetrack
 
+  seed:
+    profiles: ["seed"]
+    build:
+      context: .
+      dockerfile: dockerfile.seed
+    restart: "no"
+    env_file: .env
+    environment:
+      DATABASE_URL: ${PROD_DATABASE_URL}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - sitetrack
+
   app:
     build:
       context: .
