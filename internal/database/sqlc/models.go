@@ -5,15 +5,138 @@
 package sqlc
 
 import (
+	"database/sql/driver"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type DeliveryParty string
+
+const (
+	DeliveryPartyCompany DeliveryParty = "company"
+	DeliveryPartyProject DeliveryParty = "project"
+)
+
+func (e *DeliveryParty) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = DeliveryParty(s)
+	case string:
+		*e = DeliveryParty(s)
+	default:
+		return fmt.Errorf("unsupported scan type for DeliveryParty: %T", src)
+	}
+	return nil
+}
+
+type NullDeliveryParty struct {
+	DeliveryParty DeliveryParty
+	Valid         bool // Valid is true if DeliveryParty is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullDeliveryParty) Scan(value interface{}) error {
+	if value == nil {
+		ns.DeliveryParty, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.DeliveryParty.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullDeliveryParty) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.DeliveryParty), nil
+}
+
+type DeliveryStatus string
+
+const (
+	DeliveryStatusInTransit DeliveryStatus = "in_transit"
+	DeliveryStatusDelivered DeliveryStatus = "delivered"
+	DeliveryStatusRejected  DeliveryStatus = "rejected"
+	DeliveryStatusCancelled DeliveryStatus = "cancelled"
+)
+
+func (e *DeliveryStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = DeliveryStatus(s)
+	case string:
+		*e = DeliveryStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for DeliveryStatus: %T", src)
+	}
+	return nil
+}
+
+type NullDeliveryStatus struct {
+	DeliveryStatus DeliveryStatus
+	Valid          bool // Valid is true if DeliveryStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullDeliveryStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.DeliveryStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.DeliveryStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullDeliveryStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.DeliveryStatus), nil
+}
 
 type AppRole struct {
 	ID          uuid.UUID
 	Name        string
 	Description string
+}
+
+type CompanyStoreStock struct {
+	MaterialID   uuid.UUID
+	Quantity     float64
+	ReorderPoint float64
+	UpdatedAt    time.Time
+}
+
+type Delivery struct {
+	ID           uuid.UUID
+	SenderType   DeliveryParty
+	SenderID     pgtype.UUID
+	ReceiverType DeliveryParty
+	ReceiverID   pgtype.UUID
+	Status       DeliveryStatus
+	SentAt       time.Time
+	ReceivedAt   pgtype.Timestamptz
+}
+
+type DeliveryLine struct {
+	ID         uuid.UUID
+	DeliveryID uuid.UUID
+	MaterialID uuid.UUID
+	Quantity   float64
+}
+
+type Material struct {
+	ID        uuid.UUID
+	Name      string
+	Category  string
+	Unit      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type Project struct {
@@ -31,6 +154,13 @@ type Project struct {
 type ProjectIDCounter struct {
 	ID        bool
 	LastValue int64
+}
+
+type ProjectStoreStock struct {
+	ProjectID  uuid.UUID
+	MaterialID uuid.UUID
+	Quantity   float64
+	UpdatedAt  time.Time
 }
 
 type RolePolicy struct {
