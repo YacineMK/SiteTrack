@@ -11,6 +11,9 @@ var allKeys = []string{
 	"JWT_SECRET",
 	"JWT_ACCESS_TTL",
 	"JWT_REFRESH_TTL",
+	"RESEND_API_KEY",
+	"RESEND_FROM",
+	"RESEND_BASE_URL",
 	"DATABASE_URL",
 	"DB_MAX_CONNS",
 	"DB_MIN_CONNS",
@@ -39,6 +42,9 @@ func TestLoad(t *testing.T) {
 		"JWT_SECRET":               "secret",
 		"JWT_ACCESS_TTL":           "5m",
 		"JWT_REFRESH_TTL":          "48h",
+		"RESEND_API_KEY":           "re_test",
+		"RESEND_FROM":              "noreply@example.com",
+		"RESEND_BASE_URL":          "https://resend.test",
 		"DATABASE_URL":             "postgres://user:pass@db:5432/app",
 		"DB_MAX_CONNS":             "25",
 		"DB_MIN_CONNS":             "5",
@@ -69,6 +75,9 @@ func TestLoad(t *testing.T) {
 	}
 	if cfg.JWTRefreshTTL != 48*time.Hour {
 		t.Fatalf("JWTRefreshTTL = %v, want 48h", cfg.JWTRefreshTTL)
+	}
+	if cfg.ResendAPIKey != "re_test" || cfg.ResendFrom != "noreply@example.com" || cfg.ResendBaseURL != "https://resend.test" {
+		t.Fatalf("Resend config = %q/%q/%q", cfg.ResendAPIKey, cfg.ResendFrom, cfg.ResendBaseURL)
 	}
 	if cfg.DatabaseURL != "postgres://user:pass@db:5432/app" {
 		t.Fatalf("DatabaseURL = %q", cfg.DatabaseURL)
@@ -109,6 +118,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.JWTRefreshTTL != 7*24*time.Hour {
 		t.Fatalf("JWTRefreshTTL = %v, want 168h", cfg.JWTRefreshTTL)
+	}
+	if cfg.ResendAPIKey != "" || cfg.ResendFrom != "" || cfg.ResendBaseURL != "https://api.resend.com" {
+		t.Fatalf("Resend defaults = %q/%q/%q", cfg.ResendAPIKey, cfg.ResendFrom, cfg.ResendBaseURL)
 	}
 	if cfg.DatabaseURL != "postgres://sitetrack:sitetrack@localhost:5432/sitetrack?sslmode=disable" {
 		t.Fatalf("DatabaseURL = %q", cfg.DatabaseURL)
