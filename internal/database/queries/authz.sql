@@ -6,6 +6,7 @@ RETURNING id, name, description, is_system;
 -- name: ListRoles :many
 SELECT id, name, description, is_system
 FROM app_roles
+WHERE (sqlc.arg(query)::text = '' OR name ILIKE '%' || sqlc.arg(query)::text || '%' OR description ILIKE '%' || sqlc.arg(query)::text || '%')
 ORDER BY name;
 
 -- name: GetRoleByID :one

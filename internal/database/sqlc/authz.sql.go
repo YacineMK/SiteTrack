@@ -208,11 +208,12 @@ func (q *Queries) ListRolePolicies(ctx context.Context, roleID uuid.UUID) ([]Rol
 const listRoles = `-- name: ListRoles :many
 SELECT id, name, description, is_system
 FROM app_roles
+WHERE ($1::text = '' OR name ILIKE '%' || $1::text || '%' OR description ILIKE '%' || $1::text || '%')
 ORDER BY name
 `
 
-func (q *Queries) ListRoles(ctx context.Context) ([]AppRole, error) {
-	rows, err := q.db.Query(ctx, listRoles)
+func (q *Queries) ListRoles(ctx context.Context, query string) ([]AppRole, error) {
+	rows, err := q.db.Query(ctx, listRoles, query)
 	if err != nil {
 		return nil, err
 	}

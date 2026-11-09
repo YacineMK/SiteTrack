@@ -64,7 +64,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
-	roles, err := h.svc.ListRoles(r.Context())
+	roles, err := h.svc.ListRoles(r.Context(), r.URL.Query().Get("q"))
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return

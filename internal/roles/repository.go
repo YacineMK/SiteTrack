@@ -44,7 +44,7 @@ type Policy struct {
 
 type Repository interface {
 	CreateRole(ctx context.Context, name, description string) (Role, error)
-	ListRoles(ctx context.Context) ([]Role, error)
+	ListRoles(ctx context.Context, query string) ([]Role, error)
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
 	GetRoleByName(ctx context.Context, name string) (Role, error)
 	AddPolicy(ctx context.Context, roleID uuid.UUID, resource, action string) error
@@ -75,8 +75,8 @@ func (r *PostgresRepository) CreateRole(ctx context.Context, name, description s
 	return toRole(row), nil
 }
 
-func (r *PostgresRepository) ListRoles(ctx context.Context) ([]Role, error) {
-	rows, err := r.queries.ListRoles(ctx)
+func (r *PostgresRepository) ListRoles(ctx context.Context, query string) ([]Role, error) {
+	rows, err := r.queries.ListRoles(ctx, query)
 	if err != nil {
 		return nil, err
 	}
