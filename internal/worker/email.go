@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
@@ -48,7 +47,7 @@ func (h *EmailHandler) Handle(ctx context.Context, task *asynq.Task) error {
 	user, err := h.users.GetByID(ctx, payload.UserID)
 	if err != nil {
 		if errors.Is(err, auth.ErrNotFound) {
-			h.fail(ctx, payload, "user not found")
+			failOutbox(ctx, h.queries, payload.OutboxID, "user not found")
 			return nil
 		}
 		return err
@@ -62,11 +61,11 @@ func (h *EmailHandler) Handle(ctx context.Context, task *asynq.Task) error {
 	})
 	if err != nil {
 		if errors.Is(err, resend.ErrInvalidEmail) || errors.Is(err, resend.ErrNotConfigured) {
-			h.fail(ctx, payload, err.Error())
+			failOutbox(ctx, h.queries, payload.OutboxID, err.Error())
 			return nil
 		}
 		if retry, _ := asynq.GetRetryCount(ctx); retry >= maxRetry(ctx) {
-			h.fail(ctx, payload, err.Error())
+			failOutbox(ctx, h.queries, payload.OutboxID, err.Error())
 			return nil
 		}
 		return err
@@ -76,17 +75,6 @@ func (h *EmailHandler) Handle(ctx context.Context, task *asynq.Task) error {
 		log.Printf("outbox complete %s: %v", payload.OutboxID, err)
 	}
 	return nil
-}
-
-func (h *EmailHandler) fail(ctx context.Context, payload EmailPayload, message string) {
-	if _, err := h.queries.FailOutbox(ctx, sqlc.FailOutboxParams{
-		ID:            payload.OutboxID,
-		Status:        "failed",
-		NextAttemptAt: time.Now(),
-		LastError:     message,
-	}); err != nil {
-		log.Printf("outbox fail %s: %v", payload.OutboxID, err)
-	}
 }
 
 func maxRetry(ctx context.Context) int {

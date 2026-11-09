@@ -12,6 +12,7 @@ import (
 	"github.com/YacineMK/SiteTrack/internal/deliveries"
 	"github.com/YacineMK/SiteTrack/internal/materials"
 	"github.com/YacineMK/SiteTrack/internal/middleware"
+	"github.com/YacineMK/SiteTrack/internal/notifications"
 	"github.com/YacineMK/SiteTrack/internal/projects"
 	"github.com/YacineMK/SiteTrack/internal/projectstore"
 	"github.com/YacineMK/SiteTrack/internal/roles"
@@ -32,7 +33,7 @@ type App struct {
 	protected      []module
 }
 
-func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtManager *kitjwt.Manager, cookieSecure bool) *App {
+func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtManager *kitjwt.Manager, cookieSecure bool, notificationHub *notifications.Hub) *App {
 	rolesModule := roles.New(roles.Dependencies{DB: postgres.Pool})
 
 	authModule := auth.New(auth.Dependencies{
@@ -54,6 +55,7 @@ func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtMan
 			projectstore.New(projectstore.Dependencies{DB: postgres.Pool}),
 			tasks.New(tasks.Dependencies{DB: postgres.Pool, Redis: redis}),
 			deliveries.New(deliveries.Dependencies{DB: postgres.Pool}),
+			notifications.New(notifications.Dependencies{DB: postgres.Pool, Hub: notificationHub}),
 		},
 	}
 	a.routes()

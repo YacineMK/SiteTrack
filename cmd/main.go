@@ -14,6 +14,7 @@ import (
 
 	"github.com/YacineMK/SiteTrack/internal/app"
 	"github.com/YacineMK/SiteTrack/internal/database"
+	"github.com/YacineMK/SiteTrack/internal/notifications"
 	"github.com/YacineMK/SiteTrack/internal/worker"
 	"github.com/YacineMK/SiteTrack/kit/config"
 	kitjwt "github.com/YacineMK/SiteTrack/kit/jwt"
@@ -54,7 +55,8 @@ func main() {
 	defer redisClient.Close()
 
 	jwtManager := kitjwt.New(cfg.JWTSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
-	a := app.New(cfg.Port, postgres, redisClient, jwtManager, cfg.CookieSecure)
+	notificationHub := notifications.NewHub()
+	a := app.New(cfg.Port, postgres, redisClient, jwtManager, cfg.CookieSecure, notificationHub)
 
 	runCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -77,6 +79,7 @@ func main() {
 		},
 	})
 	outboxWorker.Handle(worker.TaskEmail, worker.NewEmailHandler(postgres.Pool, mailClient).Handle)
+	outboxWorker.Handle(worker.TaskAppNotification, worker.NewAppNotificationHandler(postgres.Pool, notificationHub).Handle)
 
 	go func() {
 		if err := outboxWorker.Run(runCtx); err != nil && !errors.Is(err, context.Canceled) {
