@@ -16,6 +16,23 @@ type AppRole struct {
 	Description string
 }
 
+type Project struct {
+	ID               uuid.UUID
+	DisplayID        string
+	Name             string
+	Description      string
+	PlannedStartDate time.Time
+	PlannedEndDate   time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	Search           interface{}
+}
+
+type ProjectIDCounter struct {
+	ID        bool
+	LastValue int64
+}
+
 type RolePolicy struct {
 	RoleID   uuid.UUID
 	Resource string
