@@ -47,6 +47,22 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	jsonutil.JSON(w, http.StatusOK, notifications)
 }
 
+func (h *Handler) unreadCount(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	unread, err := h.svc.UnreadCount(r.Context(), userID)
+	if err != nil {
+		h.utils.WriteServiceError(w, err)
+		return
+	}
+
+	jsonutil.JSON(w, http.StatusOK, map[string]int64{"unread": unread})
+}
+
 func (h *Handler) markRead(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserID(r.Context())
 	if !ok {

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
+	"github.com/go-ozzo/ozzo-validation/v4/is"
 	"github.com/google/uuid"
 )
 
@@ -75,6 +76,29 @@ func (r UpdateMemberRequest) Validate() error {
 		return errors.New("is_admin is required")
 	}
 	return nil
+}
+
+type InviteRequest struct {
+	Email string `json:"email"`
+	Role  string `json:"role"`
+}
+
+func (r InviteRequest) Validate() error {
+	return validation.ValidateStruct(&r,
+		validation.Field(&r.Email, validation.Required, is.Email),
+		validation.Field(&r.Role, validation.Required, validation.In("member", "admin")),
+	)
+}
+
+type InvitationResponse struct {
+	ID               uuid.UUID `json:"id"`
+	ProjectDisplayID string    `json:"project_display_id"`
+	InviteeID        uuid.UUID `json:"invitee_id"`
+	Name             string    `json:"name"`
+	Email            string    `json:"email"`
+	Status           string    `json:"status"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 type ListProjectsResponse struct {

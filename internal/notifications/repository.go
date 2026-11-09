@@ -26,6 +26,7 @@ type Notification struct {
 
 type Repository interface {
 	List(ctx context.Context, userID uuid.UUID, unreadOnly bool, limit, offset int32) ([]Notification, int64, error)
+	Count(ctx context.Context, userID uuid.UUID, unreadOnly bool) (int64, error)
 	MarkRead(ctx context.Context, id, userID uuid.UUID) (Notification, error)
 }
 
@@ -61,6 +62,13 @@ func (r *PostgresRepository) List(ctx context.Context, userID uuid.UUID, unreadO
 		items = append(items, toNotification(row))
 	}
 	return items, total, nil
+}
+
+func (r *PostgresRepository) Count(ctx context.Context, userID uuid.UUID, unreadOnly bool) (int64, error) {
+	return r.queries.CountNotifications(ctx, sqlc.CountNotificationsParams{
+		UserID:     userID,
+		UnreadOnly: unreadOnly,
+	})
 }
 
 func (r *PostgresRepository) MarkRead(ctx context.Context, id, userID uuid.UUID) (Notification, error) {

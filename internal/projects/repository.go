@@ -13,9 +13,14 @@ import (
 )
 
 var (
-	ErrNotFound       = errors.New("project not found")
-	ErrMemberNotFound = errors.New("project member not found")
-	ErrLastAdmin      = errors.New("project must keep at least one admin")
+	ErrNotFound        = errors.New("project not found")
+	ErrMemberNotFound  = errors.New("project member not found")
+	ErrLastAdmin       = errors.New("project must keep at least one admin")
+	ErrInviteExists    = errors.New("invitation already exists")
+	ErrInviteNotFound  = errors.New("invitation not found")
+	ErrInviteExpired   = errors.New("invitation expired")
+	ErrInviteeNotFound = errors.New("user not found")
+	ErrAlreadyMember   = errors.New("user is already a member")
 )
 
 type Project struct {
@@ -38,6 +43,38 @@ type Member struct {
 	CreatedAt time.Time
 }
 
+type Invitee struct {
+	ID    uuid.UUID
+	Name  string
+	Email string
+}
+
+type Invitation struct {
+	ID        uuid.UUID
+	UserID    uuid.UUID
+	Type      string
+	Title     string
+	Body      string
+	Data      []byte
+	ReadAt    *time.Time
+	CreatedAt time.Time
+}
+
+type InvitationNotification struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+	Type   string
+	Title  string
+	Body   string
+	Data   []byte
+}
+
+type OutboxEvent struct {
+	ID      uuid.UUID
+	Kind    string
+	Payload []byte
+}
+
 type Repository interface {
 	Create(ctx context.Context, project Project, adminID uuid.UUID) (Project, error)
 	GetByDisplayID(ctx context.Context, displayID string) (Project, error)
@@ -49,6 +86,15 @@ type Repository interface {
 	ListMembers(ctx context.Context, projectID uuid.UUID) ([]Member, error)
 	SetMemberAdmin(ctx context.Context, projectID, userID uuid.UUID, isAdmin bool) error
 	RemoveMember(ctx context.Context, projectID, userID uuid.UUID) error
+	Membership(ctx context.Context, projectID, userID uuid.UUID) (bool, bool, error)
+	FindUserByEmail(ctx context.Context, email string) (Invitee, error)
+	CreateInvitationNotification(ctx context.Context, notification InvitationNotification, events []OutboxEvent) error
+	GetInvitationNotification(ctx context.Context, id uuid.UUID) (Invitation, error)
+	LockInvitationNotification(ctx context.Context, id uuid.UUID) (Invitation, error)
+	DeleteInvitationNotification(ctx context.Context, id uuid.UUID) (int64, error)
+	MarkInvitationRead(ctx context.Context, id, userID uuid.UUID) (int64, error)
+	AcceptInvitation(ctx context.Context, id, projectID, userID uuid.UUID, isAdmin bool) error
+	RejectInvitation(ctx context.Context, id, userID uuid.UUID) (int64, error)
 }
 
 type PostgresRepository struct {
@@ -286,6 +332,157 @@ func (r *PostgresRepository) ensureAnotherAdmin(ctx context.Context, queries *sq
 		return ErrLastAdmin
 	}
 	return nil
+}
+
+func (r *PostgresRepository) Membership(ctx context.Context, projectID, userID uuid.UUID) (bool, bool, error) {
+	isAdmin, err := r.queries.GetProjectMembership(ctx, sqlc.GetProjectMembershipParams{
+		ProjectID: projectID,
+		UserID:    userID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, false, nil
+		}
+		return false, false, err
+	}
+	return true, isAdmin, nil
+}
+
+func (r *PostgresRepository) FindUserByEmail(ctx context.Context, email string) (Invitee, error) {
+	row, err := r.queries.FindUserByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Invitee{}, ErrInviteeNotFound
+		}
+		return Invitee{}, err
+	}
+	return Invitee{ID: row.ID, Name: row.Name, Email: row.Email}, nil
+}
+
+func (r *PostgresRepository) CreateInvitationNotification(ctx context.Context, notification InvitationNotification, events []OutboxEvent) error {
+	return pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		queries := r.queries.WithTx(tx)
+
+		if _, err := queries.CreateNotification(ctx, sqlc.CreateNotificationParams{
+			ID:     notification.ID,
+			UserID: notification.UserID,
+			Type:   notification.Type,
+			Title:  notification.Title,
+			Body:   notification.Body,
+			Data:   notification.Data,
+		}); err != nil {
+			return err
+		}
+
+		for _, event := range events {
+			if err := queries.CreateOutboxEvent(ctx, sqlc.CreateOutboxEventParams{
+				ID:      event.ID,
+				Kind:    event.Kind,
+				Payload: event.Payload,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (r *PostgresRepository) GetInvitationNotification(ctx context.Context, id uuid.UUID) (Invitation, error) {
+	row, err := r.queries.GetNotification(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Invitation{}, ErrInviteNotFound
+		}
+		return Invitation{}, err
+	}
+	return toInvitation(row), nil
+}
+
+func (r *PostgresRepository) LockInvitationNotification(ctx context.Context, id uuid.UUID) (Invitation, error) {
+	row, err := r.queries.LockNotification(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Invitation{}, ErrInviteNotFound
+		}
+		return Invitation{}, err
+	}
+	return toInvitation(row), nil
+}
+
+func (r *PostgresRepository) DeleteInvitationNotification(ctx context.Context, id uuid.UUID) (int64, error) {
+	return r.queries.DeleteNotification(ctx, id)
+}
+
+func (r *PostgresRepository) MarkInvitationRead(ctx context.Context, id, userID uuid.UUID) (int64, error) {
+	_, err := r.queries.MarkNotificationRead(ctx, sqlc.MarkNotificationReadParams{
+		ID:     id,
+		UserID: userID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return 1, nil
+}
+
+func (r *PostgresRepository) AcceptInvitation(ctx context.Context, id, projectID, userID uuid.UUID, isAdmin bool) error {
+	return pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		queries := r.queries.WithTx(tx)
+
+		notification, err := queries.LockNotification(ctx, id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrInviteNotFound
+			}
+			return err
+		}
+		if notification.ReadAt.Valid {
+			return ErrInviteNotFound
+		}
+
+		if err := queries.AddProjectMemberIfAbsent(ctx, sqlc.AddProjectMemberIfAbsentParams{
+			ProjectID: projectID,
+			UserID:    userID,
+			IsAdmin:   isAdmin,
+		}); err != nil {
+			return err
+		}
+
+		if _, err := queries.MarkNotificationRead(ctx, sqlc.MarkNotificationReadParams{
+			ID:     id,
+			UserID: userID,
+		}); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrInviteNotFound
+			}
+			return err
+		}
+		return nil
+	})
+}
+
+func (r *PostgresRepository) RejectInvitation(ctx context.Context, id, userID uuid.UUID) (int64, error) {
+	return r.MarkInvitationRead(ctx, id, userID)
+}
+
+func toInvitation(row sqlc.Notification) Invitation {
+	var readAt *time.Time
+	if row.ReadAt.Valid {
+		value := row.ReadAt.Time
+		readAt = &value
+	}
+	return Invitation{
+		ID:        row.ID,
+		UserID:    row.UserID,
+		Type:      row.Type,
+		Title:     row.Title,
+		Body:      row.Body,
+		Data:      row.Data,
+		ReadAt:    readAt,
+		CreatedAt: row.CreatedAt,
+	}
 }
 
 func toProject(id uuid.UUID, displayID, name, description string, start, end, createdAt, updatedAt time.Time, isAdmin bool) Project {

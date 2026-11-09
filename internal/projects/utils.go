@@ -73,6 +73,16 @@ func (utils) WriteServiceError(w http.ResponseWriter, err error) {
 		jsonutil.Error(w, http.StatusNotFound, "project member not found")
 	case errors.Is(err, ErrLastAdmin):
 		jsonutil.Error(w, http.StatusConflict, "project must keep at least one admin")
+	case errors.Is(err, ErrInviteExists):
+		jsonutil.Error(w, http.StatusConflict, "invitation already exists")
+	case errors.Is(err, ErrInviteNotFound):
+		jsonutil.Error(w, http.StatusNotFound, "invitation not found")
+	case errors.Is(err, ErrInviteExpired):
+		jsonutil.Error(w, http.StatusGone, "invitation expired")
+	case errors.Is(err, ErrInviteeNotFound):
+		jsonutil.Error(w, http.StatusNotFound, "user not found")
+	case errors.Is(err, ErrAlreadyMember):
+		jsonutil.Error(w, http.StatusConflict, "user is already a member")
 	default:
 		jsonutil.Error(w, http.StatusInternalServerError, "internal server error")
 	}

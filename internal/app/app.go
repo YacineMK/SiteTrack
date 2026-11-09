@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -33,9 +34,9 @@ type App struct {
 	protected      []module
 }
 
-func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtManager *kitjwt.Manager, cookieSecure bool, notificationHub *notifications.Hub) *App {
+func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtManager *kitjwt.Manager, cookieSecure bool, notificationHub *notifications.Hub, inviteTTL time.Duration, appBaseURL string) *App {
 	rolesModule := roles.New(roles.Dependencies{DB: postgres.Pool})
-	projectsModule := projects.New(projects.Dependencies{DB: postgres.Pool, Redis: redis})
+	projectsModule := projects.New(projects.Dependencies{DB: postgres.Pool, Redis: redis, InviteTTL: inviteTTL, AppBaseURL: appBaseURL})
 
 	authModule := auth.New(auth.Dependencies{
 		DB:           postgres.Pool,

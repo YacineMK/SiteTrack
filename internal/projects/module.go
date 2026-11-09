@@ -1,6 +1,8 @@
 package projects
 
 import (
+	"time"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -10,8 +12,10 @@ import (
 )
 
 type Dependencies struct {
-	DB    *pgxpool.Pool
-	Redis *kitredis.Redis
+	DB         *pgxpool.Pool
+	Redis      *kitredis.Redis
+	InviteTTL  time.Duration
+	AppBaseURL string
 }
 
 type Module struct {
@@ -22,7 +26,7 @@ type Module struct {
 func New(deps Dependencies) *Module {
 	repo := NewPostgresRepository(deps.DB)
 	return &Module{
-		handler: NewHandler(NewService(repo, ids.New(deps.Redis, deps.DB)), repo),
+		handler: NewHandler(NewService(repo, ids.New(deps.Redis, deps.DB), deps.Redis, deps.InviteTTL, deps.AppBaseURL), repo),
 		access:  repo,
 	}
 }

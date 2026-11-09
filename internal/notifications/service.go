@@ -11,6 +11,7 @@ var ErrInvalidInput = errors.New("invalid input")
 
 type Service interface {
 	List(ctx context.Context, userID uuid.UUID, unreadOnly bool, limit, offset int32) (ListNotificationsResponse, error)
+	UnreadCount(ctx context.Context, userID uuid.UUID) (int64, error)
 	MarkRead(ctx context.Context, userID uuid.UUID, id string) (NotificationResponse, error)
 }
 
@@ -32,6 +33,10 @@ func (s *service) List(ctx context.Context, userID uuid.UUID, unreadOnly bool, l
 	}
 
 	return s.utils.ListResponse(items, total, limit, offset), nil
+}
+
+func (s *service) UnreadCount(ctx context.Context, userID uuid.UUID) (int64, error) {
+	return s.repo.Count(ctx, userID, true)
 }
 
 func (s *service) MarkRead(ctx context.Context, userID uuid.UUID, id string) (NotificationResponse, error) {

@@ -190,6 +190,96 @@ func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *Handler) invite(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := middleware.ProjectID(r.Context())
+	if !ok {
+		jsonutil.Error(w, http.StatusNotFound, "project not found")
+		return
+	}
+	actorID, ok := middleware.UserID(r.Context())
+	if !ok {
+		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var req InviteRequest
+	if err := jsonutil.DecodeJSON(r, &req); err != nil {
+		jsonutil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	invitation, err := h.svc.Invite(r.Context(), projectID, chi.URLParam(r, "display_id"), actorID, req)
+	if err != nil {
+		h.utils.WriteServiceError(w, err)
+		return
+	}
+
+	jsonutil.JSON(w, http.StatusCreated, invitation)
+}
+
+func (h *Handler) withdrawInvitation(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := middleware.ProjectID(r.Context())
+	if !ok {
+		jsonutil.Error(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	notificationID, err := uuid.Parse(chi.URLParam(r, "invitation_id"))
+	if err != nil {
+		jsonutil.Error(w, http.StatusBadRequest, "invalid invitation id")
+		return
+	}
+
+	if err := h.svc.WithdrawInvitation(r.Context(), projectID, notificationID); err != nil {
+		h.utils.WriteServiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) acceptInvitation(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	notificationID, err := uuid.Parse(chi.URLParam(r, "invitation_id"))
+	if err != nil {
+		jsonutil.Error(w, http.StatusBadRequest, "invalid invitation id")
+		return
+	}
+
+	if err := h.svc.AcceptInvitation(r.Context(), userID, notificationID); err != nil {
+		h.utils.WriteServiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) rejectInvitation(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	notificationID, err := uuid.Parse(chi.URLParam(r, "invitation_id"))
+	if err != nil {
+		jsonutil.Error(w, http.StatusBadRequest, "invalid invitation id")
+		return
+	}
+
+	if err := h.svc.RejectInvitation(r.Context(), userID, notificationID); err != nil {
+		h.utils.WriteServiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) pagination(w http.ResponseWriter, r *http.Request) (int32, int32, bool) {
 	query := r.URL.Query()
 

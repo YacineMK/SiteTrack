@@ -61,7 +61,7 @@ func main() {
 
 	jwtManager := kitjwt.New(cfg.JWTSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
 	notificationHub := notifications.NewHub()
-	a := app.New(cfg.Port, postgres, redisClient, jwtManager, cfg.CookieSecure, notificationHub)
+	a := app.New(cfg.Port, postgres, redisClient, jwtManager, cfg.CookieSecure, notificationHub, cfg.InviteTTL, cfg.AppBaseURL)
 
 	runCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
