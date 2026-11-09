@@ -14,6 +14,9 @@ type Config struct {
 	JWTSecret            string
 	JWTAccessTTL         time.Duration
 	JWTRefreshTTL        time.Duration
+	ResendAPIKey         string
+	ResendFrom           string
+	ResendBaseURL        string
 	DatabaseURL          string
 	DBMaxConns           int32
 	DBMinConns           int32
@@ -37,6 +40,9 @@ func Load() Config {
 		JWTSecret:            getEnv("JWT_SECRET", "placeholder"),
 		JWTAccessTTL:         getEnvDuration("JWT_ACCESS_TTL", 15*time.Minute),
 		JWTRefreshTTL:        getEnvDuration("JWT_REFRESH_TTL", 7*24*time.Hour),
+		ResendAPIKey:         getEnv("RESEND_API_KEY", ""),
+		ResendFrom:           getEnv("RESEND_FROM", ""),
+		ResendBaseURL:        getEnv("RESEND_BASE_URL", "https://api.resend.com"),
 		DatabaseURL:          getEnv("DATABASE_URL", "postgres://sitetrack:sitetrack@localhost:5432/sitetrack?sslmode=disable"),
 		DBMaxConns:           int32(getEnvInt("DB_MAX_CONNS", 10)),
 		DBMinConns:           int32(getEnvInt("DB_MIN_CONNS", 2)),
