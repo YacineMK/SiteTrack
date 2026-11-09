@@ -145,11 +145,8 @@ func TestLoginReturnsValidTokenPair(t *testing.T) {
 	if resp.AccessToken == "" || resp.RefreshToken == "" {
 		t.Fatal("Login() returned an empty token")
 	}
-	if resp.TokenType != "Bearer" {
-		t.Fatalf("TokenType = %q, want %q", resp.TokenType, "Bearer")
-	}
-	if resp.ExpiresIn <= 0 {
-		t.Fatalf("ExpiresIn = %d, want > 0", resp.ExpiresIn)
+	if !resp.AccessExpiresAt.After(time.Now()) || !resp.RefreshExpiresAt.After(resp.AccessExpiresAt) {
+		t.Fatal("Login() returned invalid token expirations")
 	}
 	if resp.User.ID != user.ID {
 		t.Fatalf("User.ID = %q, want %q", resp.User.ID, user.ID)
@@ -276,7 +273,7 @@ func TestAuthenticateRejectsMalformedToken(t *testing.T) {
 	}
 }
 
-func loginAlice(t *testing.T, svc *Service) AuthResponse {
+func loginAlice(t *testing.T, svc *Service) Session {
 	t.Helper()
 	resp, err := svc.Login(context.Background(), LoginRequest{
 		Email:    "alice@example.com",
@@ -293,7 +290,7 @@ func TestRefreshRotatesTokens(t *testing.T) {
 	registerAlice(t, svc)
 	login := loginAlice(t, svc)
 
-	refreshed, err := svc.Refresh(context.Background(), RefreshRequest{RefreshToken: login.RefreshToken})
+	refreshed, err := svc.Refresh(context.Background(), login.RefreshToken)
 	if err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
@@ -307,7 +304,7 @@ func TestRefreshRotatesTokens(t *testing.T) {
 		t.Fatalf("new refresh token invalid: %v", err)
 	}
 
-	if _, err := svc.Refresh(context.Background(), RefreshRequest{RefreshToken: login.RefreshToken}); !errors.Is(err, ErrUnauthorized) {
+	if _, err := svc.Refresh(context.Background(), login.RefreshToken); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("reusing a rotated refresh token: error = %v, want ErrUnauthorized", err)
 	}
 }
@@ -317,7 +314,7 @@ func TestRefreshRejectsAccessToken(t *testing.T) {
 	registerAlice(t, svc)
 	login := loginAlice(t, svc)
 
-	if _, err := svc.Refresh(context.Background(), RefreshRequest{RefreshToken: login.AccessToken}); !errors.Is(err, ErrUnauthorized) {
+	if _, err := svc.Refresh(context.Background(), login.AccessToken); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("Refresh(access token) error = %v, want ErrUnauthorized", err)
 	}
 }
@@ -325,8 +322,8 @@ func TestRefreshRejectsAccessToken(t *testing.T) {
 func TestRefreshRejectsMissingToken(t *testing.T) {
 	svc, _, _, _ := newTestService()
 
-	if _, err := svc.Refresh(context.Background(), RefreshRequest{}); !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("Refresh(empty) error = %v, want ErrInvalidInput", err)
+	if _, err := svc.Refresh(context.Background(), ""); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("Refresh(empty) error = %v, want ErrUnauthorized", err)
 	}
 }
 
@@ -343,7 +340,7 @@ func TestRefreshRejectsStaleTokenVersion(t *testing.T) {
 		t.Fatalf("IncrementTokenVersion() error = %v", err)
 	}
 
-	if _, err := svc.Refresh(context.Background(), RefreshRequest{RefreshToken: login.RefreshToken}); !errors.Is(err, ErrUnauthorized) {
+	if _, err := svc.Refresh(context.Background(), login.RefreshToken); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("Refresh() error = %v, want ErrUnauthorized", err)
 	}
 }
@@ -353,7 +350,7 @@ func TestLogoutRevokesSession(t *testing.T) {
 	registerAlice(t, svc)
 	login := loginAlice(t, svc)
 
-	err := svc.Logout(context.Background(), login.AccessToken, LogoutRequest{RefreshToken: login.RefreshToken})
+	err := svc.Logout(context.Background(), login.AccessToken, login.RefreshToken)
 	if err != nil {
 		t.Fatalf("Logout() error = %v", err)
 	}
@@ -361,7 +358,7 @@ func TestLogoutRevokesSession(t *testing.T) {
 	if _, err := svc.Authenticate(context.Background(), login.AccessToken); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("access token after logout: error = %v, want ErrUnauthorized", err)
 	}
-	if _, err := svc.Refresh(context.Background(), RefreshRequest{RefreshToken: login.RefreshToken}); !errors.Is(err, ErrUnauthorized) {
+	if _, err := svc.Refresh(context.Background(), login.RefreshToken); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("refresh token after logout: error = %v, want ErrUnauthorized", err)
 	}
 }
@@ -384,7 +381,7 @@ func TestLogoutRejectsMismatchedTokens(t *testing.T) {
 		t.Fatalf("Login(Bob) error = %v", err)
 	}
 
-	err = svc.Logout(context.Background(), login.AccessToken, LogoutRequest{RefreshToken: bob.RefreshToken})
+	err = svc.Logout(context.Background(), login.AccessToken, bob.RefreshToken)
 	if !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("Logout(mismatched) error = %v, want ErrUnauthorized", err)
 	}
@@ -395,8 +392,8 @@ func TestLogoutRejectsMissingRefreshToken(t *testing.T) {
 	registerAlice(t, svc)
 	login := loginAlice(t, svc)
 
-	if err := svc.Logout(context.Background(), login.AccessToken, LogoutRequest{}); !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("Logout(empty) error = %v, want ErrInvalidInput", err)
+	if err := svc.Logout(context.Background(), login.AccessToken, ""); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("Logout(empty) error = %v, want ErrUnauthorized", err)
 	}
 }
 

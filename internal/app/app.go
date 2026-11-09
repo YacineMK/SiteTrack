@@ -21,16 +21,17 @@ type App struct {
 	modules  []module
 }
 
-func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtManager *kitjwt.Manager) *App {
+func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtManager *kitjwt.Manager, cookieSecure bool) *App {
 	a := &App{
 		postgres: postgres,
 		redis:    redis,
 		server:   server.New(addr),
 		modules: []module{
 			auth.New(auth.Dependencies{
-				DB:    postgres.Pool,
-				Redis: redis,
-				JWT:   jwtManager,
+				DB:           postgres.Pool,
+				Redis:        redis,
+				JWT:          jwtManager,
+				CookieSecure: cookieSecure,
 			}),
 		},
 	}

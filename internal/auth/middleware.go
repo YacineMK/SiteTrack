@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	"github.com/google/uuid"
 
@@ -20,13 +19,13 @@ const (
 
 func (s *Service) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := bearerToken(r)
-		if token == "" {
+		cookie, err := r.Cookie(accessCookieName)
+		if err != nil || cookie.Value == "" {
 			writeUnauthorized(w)
 			return
 		}
 
-		claims, err := s.Authenticate(r.Context(), token)
+		claims, err := s.Authenticate(r.Context(), cookie.Value)
 		if err != nil {
 			writeUnauthorized(w)
 			return
@@ -58,14 +57,6 @@ func AppRole(ctx context.Context) (string, bool) {
 func TokenVersion(ctx context.Context) (int32, bool) {
 	version, ok := ctx.Value(tokenVersionKey).(int32)
 	return version, ok
-}
-
-func bearerToken(r *http.Request) string {
-	scheme, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
-	if !ok || !strings.EqualFold(scheme, "Bearer") {
-		return ""
-	}
-	return strings.TrimSpace(token)
 }
 
 func writeUnauthorized(w http.ResponseWriter) {

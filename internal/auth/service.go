@@ -23,6 +23,14 @@ var dummyHash = func() string {
 	return encoded
 }()
 
+type Session struct {
+	AccessToken      string
+	RefreshToken     string
+	AccessExpiresAt  time.Time
+	RefreshExpiresAt time.Time
+	User             UserResponse
+}
+
 type Service struct {
 	repo      Repository
 	jwt       *kitjwt.Manager
@@ -68,64 +76,64 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (UserRespon
 	return toUserResponse(user), nil
 }
 
-func (s *Service) Login(ctx context.Context, req LoginRequest) (AuthResponse, error) {
+func (s *Service) Login(ctx context.Context, req LoginRequest) (Session, error) {
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	if err := req.Validate(); err != nil {
-		return AuthResponse{}, ErrInvalidInput
+		return Session{}, ErrInvalidInput
 	}
 
 	user, err := s.repo.GetByEmail(ctx, req.Email)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			_, _ = hash.Verify(req.Password, dummyHash)
-			return AuthResponse{}, ErrInvalidCredentials
+			return Session{}, ErrInvalidCredentials
 		}
-		return AuthResponse{}, err
+		return Session{}, err
 	}
 
 	match, err := hash.Verify(req.Password, user.PasswordHash)
 	if err != nil || !match {
-		return AuthResponse{}, ErrInvalidCredentials
+		return Session{}, ErrInvalidCredentials
 	}
 
 	pair, err := s.jwt.GeneratePair(user.ID.String(), user.AppRole, user.TokenVersion)
 	if err != nil {
-		return AuthResponse{}, err
+		return Session{}, err
 	}
 
-	return tokenResponse(pair, user), nil
+	return newSession(pair, user), nil
 }
 
-func (s *Service) Refresh(ctx context.Context, req RefreshRequest) (AuthResponse, error) {
-	if err := req.Validate(); err != nil {
-		return AuthResponse{}, ErrInvalidInput
+func (s *Service) Refresh(ctx context.Context, refreshToken string) (Session, error) {
+	if refreshToken == "" {
+		return Session{}, ErrUnauthorized
 	}
 
-	claims, err := s.jwt.ParseRefresh(req.RefreshToken)
+	claims, err := s.jwt.ParseRefresh(refreshToken)
 	if err != nil {
-		return AuthResponse{}, ErrUnauthorized
+		return Session{}, ErrUnauthorized
 	}
 
 	user, err := s.sessionUser(ctx, claims)
 	if err != nil {
-		return AuthResponse{}, err
+		return Session{}, err
 	}
 
 	pair, err := s.jwt.GeneratePair(user.ID.String(), user.AppRole, user.TokenVersion)
 	if err != nil {
-		return AuthResponse{}, err
+		return Session{}, err
 	}
 
 	if err := s.revoke(ctx, claims); err != nil {
-		return AuthResponse{}, err
+		return Session{}, err
 	}
 
-	return tokenResponse(pair, user), nil
+	return newSession(pair, user), nil
 }
 
-func (s *Service) Logout(ctx context.Context, accessToken string, req LogoutRequest) error {
-	if err := req.Validate(); err != nil {
-		return ErrInvalidInput
+func (s *Service) Logout(ctx context.Context, accessToken, refreshToken string) error {
+	if accessToken == "" || refreshToken == "" {
+		return ErrUnauthorized
 	}
 
 	accessClaims, err := s.jwt.ParseAccess(accessToken)
@@ -133,7 +141,7 @@ func (s *Service) Logout(ctx context.Context, accessToken string, req LogoutRequ
 		return ErrUnauthorized
 	}
 
-	refreshClaims, err := s.jwt.ParseRefresh(req.RefreshToken)
+	refreshClaims, err := s.jwt.ParseRefresh(refreshToken)
 	if err != nil {
 		return ErrUnauthorized
 	}
@@ -209,13 +217,13 @@ func (s *Service) revoke(ctx context.Context, claims *kitjwt.Claims) error {
 	return s.blacklist.Add(ctx, claims.ID, ttl)
 }
 
-func tokenResponse(pair kitjwt.Pair, user User) AuthResponse {
-	return AuthResponse{
-		AccessToken:  pair.AccessToken,
-		RefreshToken: pair.RefreshToken,
-		TokenType:    "Bearer",
-		ExpiresIn:    int64(time.Until(pair.AccessExpiresAt).Seconds()),
-		User:         toUserResponse(user),
+func newSession(pair kitjwt.Pair, user User) Session {
+	return Session{
+		AccessToken:      pair.AccessToken,
+		RefreshToken:     pair.RefreshToken,
+		AccessExpiresAt:  pair.AccessExpiresAt,
+		RefreshExpiresAt: pair.RefreshExpiresAt,
+		User:             toUserResponse(user),
 	}
 }
 

@@ -44,7 +44,7 @@ func main() {
 	defer redis.Close()
 
 	jwtManager := kitjwt.New(cfg.JWTSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
-	a := app.New(cfg.Port, postgres, redis, jwtManager)
+	a := app.New(cfg.Port, postgres, redis, jwtManager, cfg.CookieSecure)
 
 	log.Printf("listening on %s", cfg.Port)
 	if err := a.Run(); err != nil {
