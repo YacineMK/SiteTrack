@@ -19,6 +19,7 @@ type Stock struct {
 	Unit         string
 	Quantity     float64
 	ReorderPoint float64
+	InTransit    float64
 }
 
 type Repository interface {
@@ -60,6 +61,7 @@ func (r *PostgresRepository) List(ctx context.Context, query string, limit, offs
 			Unit:         row.Unit,
 			Quantity:     row.Quantity,
 			ReorderPoint: row.ReorderPoint,
+			InTransit:    row.InTransit,
 		})
 	}
 	return stock, total, nil
@@ -77,6 +79,7 @@ func (r *PostgresRepository) Get(ctx context.Context, materialID uuid.UUID) (Sto
 		Unit:         row.Unit,
 		Quantity:     row.Quantity,
 		ReorderPoint: row.ReorderPoint,
+		InTransit:    row.InTransit,
 	}, nil
 }
 

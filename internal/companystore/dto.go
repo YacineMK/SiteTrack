@@ -35,6 +35,7 @@ type StockResponse struct {
 	Unit         string    `json:"unit"`
 	Quantity     float64   `json:"quantity"`
 	ReorderPoint float64   `json:"reorder_point"`
+	InTransit    float64   `json:"in_transit"`
 	Status       string    `json:"status"`
 }
 

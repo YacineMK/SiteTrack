@@ -35,6 +35,7 @@ func (utils) ToResponse(stock Stock) StockResponse {
 		Unit:         stock.Unit,
 		Quantity:     stock.Quantity,
 		ReorderPoint: stock.ReorderPoint,
+		InTransit:    stock.InTransit,
 		Status:       status,
 	}
 }

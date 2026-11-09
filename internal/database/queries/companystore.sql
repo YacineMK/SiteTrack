@@ -1,7 +1,11 @@
 -- name: ListCompanyStock :many
 SELECT m.id AS material_id, m.name, m.category, m.unit,
        COALESCE(s.quantity, 0)::numeric AS quantity,
-       COALESCE(s.reorder_point, 0)::numeric AS reorder_point
+       COALESCE(s.reorder_point, 0)::numeric AS reorder_point,
+       COALESCE((SELECT SUM(dl.quantity)
+                 FROM delivery_lines dl
+                 JOIN deliveries d ON d.id = dl.delivery_id
+                 WHERE dl.material_id = m.id AND d.sender_type = 'company' AND d.status = 'in_transit'), 0)::numeric AS in_transit
 FROM materials m
 LEFT JOIN company_store_stock s ON s.material_id = m.id
 WHERE (sqlc.arg(query)::text = '' OR m.name ILIKE '%' || sqlc.arg(query)::text || '%' OR m.category ILIKE '%' || sqlc.arg(query)::text || '%')
@@ -16,7 +20,11 @@ WHERE (sqlc.arg(query)::text = '' OR m.name ILIKE '%' || sqlc.arg(query)::text |
 -- name: GetCompanyStock :one
 SELECT m.id AS material_id, m.name, m.category, m.unit,
        COALESCE(s.quantity, 0)::numeric AS quantity,
-       COALESCE(s.reorder_point, 0)::numeric AS reorder_point
+       COALESCE(s.reorder_point, 0)::numeric AS reorder_point,
+       COALESCE((SELECT SUM(dl.quantity)
+                 FROM delivery_lines dl
+                 JOIN deliveries d ON d.id = dl.delivery_id
+                 WHERE dl.material_id = m.id AND d.sender_type = 'company' AND d.status = 'in_transit'), 0)::numeric AS in_transit
 FROM materials m
 LEFT JOIN company_store_stock s ON s.material_id = m.id
 WHERE m.id = $1;

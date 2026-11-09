@@ -73,7 +73,11 @@ func (q *Queries) DeductCompanyStock(ctx context.Context, arg DeductCompanyStock
 const getCompanyStock = `-- name: GetCompanyStock :one
 SELECT m.id AS material_id, m.name, m.category, m.unit,
        COALESCE(s.quantity, 0)::numeric AS quantity,
-       COALESCE(s.reorder_point, 0)::numeric AS reorder_point
+       COALESCE(s.reorder_point, 0)::numeric AS reorder_point,
+       COALESCE((SELECT SUM(dl.quantity)
+                 FROM delivery_lines dl
+                 JOIN deliveries d ON d.id = dl.delivery_id
+                 WHERE dl.material_id = m.id AND d.sender_type = 'company' AND d.status = 'in_transit'), 0)::numeric AS in_transit
 FROM materials m
 LEFT JOIN company_store_stock s ON s.material_id = m.id
 WHERE m.id = $1
@@ -86,6 +90,7 @@ type GetCompanyStockRow struct {
 	Unit         string
 	Quantity     float64
 	ReorderPoint float64
+	InTransit    float64
 }
 
 func (q *Queries) GetCompanyStock(ctx context.Context, id uuid.UUID) (GetCompanyStockRow, error) {
@@ -98,6 +103,7 @@ func (q *Queries) GetCompanyStock(ctx context.Context, id uuid.UUID) (GetCompany
 		&i.Unit,
 		&i.Quantity,
 		&i.ReorderPoint,
+		&i.InTransit,
 	)
 	return i, err
 }
@@ -105,7 +111,11 @@ func (q *Queries) GetCompanyStock(ctx context.Context, id uuid.UUID) (GetCompany
 const listCompanyStock = `-- name: ListCompanyStock :many
 SELECT m.id AS material_id, m.name, m.category, m.unit,
        COALESCE(s.quantity, 0)::numeric AS quantity,
-       COALESCE(s.reorder_point, 0)::numeric AS reorder_point
+       COALESCE(s.reorder_point, 0)::numeric AS reorder_point,
+       COALESCE((SELECT SUM(dl.quantity)
+                 FROM delivery_lines dl
+                 JOIN deliveries d ON d.id = dl.delivery_id
+                 WHERE dl.material_id = m.id AND d.sender_type = 'company' AND d.status = 'in_transit'), 0)::numeric AS in_transit
 FROM materials m
 LEFT JOIN company_store_stock s ON s.material_id = m.id
 WHERE ($1::text = '' OR m.name ILIKE '%' || $1::text || '%' OR m.category ILIKE '%' || $1::text || '%')
@@ -126,6 +136,7 @@ type ListCompanyStockRow struct {
 	Unit         string
 	Quantity     float64
 	ReorderPoint float64
+	InTransit    float64
 }
 
 func (q *Queries) ListCompanyStock(ctx context.Context, arg ListCompanyStockParams) ([]ListCompanyStockRow, error) {
@@ -144,6 +155,7 @@ func (q *Queries) ListCompanyStock(ctx context.Context, arg ListCompanyStockPara
 			&i.Unit,
 			&i.Quantity,
 			&i.ReorderPoint,
+			&i.InTransit,
 		); err != nil {
 			return nil, err
 		}
