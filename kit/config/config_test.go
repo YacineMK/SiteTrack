@@ -26,6 +26,11 @@ var allKeys = []string{
 	"REDIS_MIN_IDLE_CONNS",
 	"REDIS_CONN_MAX_LIFETIME",
 	"REDIS_CONN_MAX_IDLE_TIME",
+	"WORKER_CONCURRENCY",
+	"OUTBOX_BATCH_SIZE",
+	"OUTBOX_POLL_INTERVAL",
+	"OUTBOX_LOCK_TIMEOUT",
+	"OUTBOX_MAX_ATTEMPTS",
 }
 
 func setEnv(t *testing.T, values map[string]string) {
@@ -57,6 +62,11 @@ func TestLoad(t *testing.T) {
 		"REDIS_MIN_IDLE_CONNS":     "4",
 		"REDIS_CONN_MAX_LIFETIME":  "7m",
 		"REDIS_CONN_MAX_IDLE_TIME": "15m",
+		"WORKER_CONCURRENCY":       "12",
+		"OUTBOX_BATCH_SIZE":        "50",
+		"OUTBOX_POLL_INTERVAL":     "3s",
+		"OUTBOX_LOCK_TIMEOUT":      "2m",
+		"OUTBOX_MAX_ATTEMPTS":      "8",
 	})
 
 	cfg := Load()
@@ -96,6 +106,12 @@ func TestLoad(t *testing.T) {
 	}
 	if cfg.RedisConnMaxLifetime != 7*time.Minute || cfg.RedisConnMaxIdleTime != 15*time.Minute {
 		t.Fatalf("Redis lifetimes = %v/%v", cfg.RedisConnMaxLifetime, cfg.RedisConnMaxIdleTime)
+	}
+	if cfg.WorkerConcurrency != 12 || cfg.OutboxBatchSize != 50 || cfg.OutboxMaxAttempts != 8 {
+		t.Fatalf("worker config = %d/%d/%d", cfg.WorkerConcurrency, cfg.OutboxBatchSize, cfg.OutboxMaxAttempts)
+	}
+	if cfg.OutboxPollInterval != 3*time.Second || cfg.OutboxLockTimeout != 2*time.Minute {
+		t.Fatalf("outbox timings = %v/%v", cfg.OutboxPollInterval, cfg.OutboxLockTimeout)
 	}
 }
 
@@ -139,6 +155,12 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.RedisConnMaxLifetime != 5*time.Minute || cfg.RedisConnMaxIdleTime != 30*time.Minute {
 		t.Fatalf("Redis lifetimes = %v/%v", cfg.RedisConnMaxLifetime, cfg.RedisConnMaxIdleTime)
+	}
+	if cfg.WorkerConcurrency != 5 || cfg.OutboxBatchSize != 20 || cfg.OutboxMaxAttempts != 5 {
+		t.Fatalf("worker defaults = %d/%d/%d", cfg.WorkerConcurrency, cfg.OutboxBatchSize, cfg.OutboxMaxAttempts)
+	}
+	if cfg.OutboxPollInterval != 2*time.Second || cfg.OutboxLockTimeout != time.Minute {
+		t.Fatalf("outbox defaults = %v/%v", cfg.OutboxPollInterval, cfg.OutboxLockTimeout)
 	}
 }
 

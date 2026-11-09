@@ -29,6 +29,11 @@ type Config struct {
 	RedisMinIdleConns    int
 	RedisConnMaxLifetime time.Duration
 	RedisConnMaxIdleTime time.Duration
+	WorkerConcurrency    int
+	OutboxBatchSize      int
+	OutboxPollInterval   time.Duration
+	OutboxLockTimeout    time.Duration
+	OutboxMaxAttempts    int
 }
 
 func Load() Config {
@@ -55,6 +60,11 @@ func Load() Config {
 		RedisMinIdleConns:    getEnvInt("REDIS_MIN_IDLE_CONNS", 2),
 		RedisConnMaxLifetime: getEnvDuration("REDIS_CONN_MAX_LIFETIME", 5*time.Minute),
 		RedisConnMaxIdleTime: getEnvDuration("REDIS_CONN_MAX_IDLE_TIME", 30*time.Minute),
+		WorkerConcurrency:    getEnvInt("WORKER_CONCURRENCY", 5),
+		OutboxBatchSize:      getEnvInt("OUTBOX_BATCH_SIZE", 20),
+		OutboxPollInterval:   getEnvDuration("OUTBOX_POLL_INTERVAL", 2*time.Second),
+		OutboxLockTimeout:    getEnvDuration("OUTBOX_LOCK_TIMEOUT", time.Minute),
+		OutboxMaxAttempts:    getEnvInt("OUTBOX_MAX_ATTEMPTS", 5),
 	}
 }
 
