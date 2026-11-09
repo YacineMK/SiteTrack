@@ -19,9 +19,8 @@ type TokenValidator interface {
 type contextKey string
 
 const (
-	userIDKey       contextKey = "user_id"
-	appRoleKey      contextKey = "app_role"
-	tokenVersionKey contextKey = "token_version"
+	userIDKey  contextKey = "user_id"
+	appRoleKey contextKey = "app_role"
 )
 
 func AuthenticateMiddleware(validator TokenValidator) func(http.Handler) http.Handler {
@@ -45,7 +44,7 @@ func AuthenticateMiddleware(validator TokenValidator) func(http.Handler) http.Ha
 				return
 			}
 
-			ctx := WithContext(r.Context(), userID, claims.AppRole, claims.TokenVersion)
+			ctx := WithContext(r.Context(), userID, claims.AppRole)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -72,10 +71,9 @@ func AuthorizationMiddleware(allowedRoles ...string) func(http.Handler) http.Han
 	}
 }
 
-func WithContext(ctx context.Context, userID uuid.UUID, appRole string, tokenVersion int32) context.Context {
+func WithContext(ctx context.Context, userID uuid.UUID, appRole string) context.Context {
 	ctx = context.WithValue(ctx, userIDKey, userID)
-	ctx = context.WithValue(ctx, appRoleKey, appRole)
-	return context.WithValue(ctx, tokenVersionKey, tokenVersion)
+	return context.WithValue(ctx, appRoleKey, appRole)
 }
 
 func UserID(ctx context.Context) (uuid.UUID, bool) {

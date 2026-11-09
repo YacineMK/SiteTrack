@@ -18,10 +18,6 @@ func NewHandler(svc Service) *Handler {
 	return &Handler{svc: svc, utils: NewUtils()}
 }
 
-func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
-	jsonutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
 func (h *Handler) listStock(w http.ResponseWriter, r *http.Request) {
 	limit, offset, ok := h.pagination(w, r)
 	if !ok {

@@ -10,7 +10,6 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Route("/company-store", func(r chi.Router) {
 		r.Use(middleware.AuthorizationMiddleware("company_store_manager", "super_admin"))
 
-		r.Get("/", h.list)
 		r.Get("/stock", h.listStock)
 		r.Get("/stock/{material_id}", h.getStock)
 		r.Post("/stock/additions", h.addStock)

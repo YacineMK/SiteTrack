@@ -32,7 +32,6 @@ type Repository interface {
 	Create(ctx context.Context, user User) (User, error)
 	GetByEmail(ctx context.Context, email string) (User, error)
 	GetByID(ctx context.Context, id uuid.UUID) (User, error)
-	IncrementTokenVersion(ctx context.Context, id uuid.UUID) error
 }
 
 type PostgresRepository struct {
@@ -80,10 +79,6 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id uuid.UUID) (User, e
 		return User{}, err
 	}
 	return toUser(row), nil
-}
-
-func (r *PostgresRepository) IncrementTokenVersion(ctx context.Context, id uuid.UUID) error {
-	return r.queries.IncrementUserTokenVersion(ctx, id)
 }
 
 func toUser(row sqlc.User) User {

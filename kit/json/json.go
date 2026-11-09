@@ -10,9 +10,7 @@ func JSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 
-	if err := sonic.ConfigDefault.NewEncoder(w).Encode(data); err != nil {
-		return
-	}
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(data)
 }
 
 func DecodeJSON(r *http.Request, dest any) error {
