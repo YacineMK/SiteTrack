@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/YacineMK/SiteTrack/kit/config"
+	kitredis "github.com/YacineMK/SiteTrack/kit/redis"
 )
 
 func main() {
@@ -67,6 +68,20 @@ func main() {
 			log.Fatalf("%s: %v", step.name, err)
 		}
 		log.Printf("%s done in %s", step.name, time.Since(started).Round(time.Millisecond))
+	}
+
+	redisClient, err := kitredis.New(ctx, kitredis.Config{
+		Addr:     appCfg.RedisAddr,
+		Password: appCfg.RedisPassword,
+		DB:       appCfg.RedisDB,
+	})
+	if err != nil {
+		log.Fatalf("redis: %v", err)
+	}
+	defer redisClient.Close()
+
+	if err := syncSequences(ctx, pool, redisClient); err != nil {
+		log.Fatalf("sync sequences: %v", err)
 	}
 
 	log.Printf("seed complete: %d users, %d projects, %d tasks, %d dependencies, %d materials, %d deliveries",

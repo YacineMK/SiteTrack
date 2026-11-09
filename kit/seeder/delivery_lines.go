@@ -16,7 +16,7 @@ INSERT INTO delivery_lines (id, delivery_id, material_id, quantity)
 SELECT gen_random_uuid(),
        d.id,
        m.ids[1 + ((d.rn * 7 + s) % array_length(m.ids, 1))::int],
-       (RANDOM() * 100)::numeric(14,3)
+       (0.001 + RANDOM() * 99.999)::numeric(14,3)
 FROM d
 CROSS JOIN m
 CROSS JOIN LATERAL generate_series(1, ($1::int / $2::int) + CASE WHEN d.rn <= ($1::int % $2::int) THEN 1 ELSE 0 END) s`
