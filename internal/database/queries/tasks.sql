@@ -9,16 +9,44 @@ FROM tasks
 WHERE project_id = $1 AND display_id = $2;
 
 -- name: ListTasks :many
-SELECT id, display_id, project_id, name, planned_start_date, planned_end_date, status, created_at, updated_at
-FROM tasks
-WHERE project_id = $1
-  AND (sqlc.arg(query)::text = '' OR name ILIKE '%' || sqlc.arg(query)::text || '%' OR display_id ILIKE '%' || sqlc.arg(query)::text || '%')
-ORDER BY display_id
+SELECT t.id, t.display_id, t.project_id, t.name, t.planned_start_date, t.planned_end_date,
+       t.status, t.created_at, t.updated_at,
+       (SELECT COUNT(*) FROM task_dependencies td WHERE td.depends_on = t.id) AS dependents_count,
+       (SELECT COALESCE(jsonb_agg(t2.display_id ORDER BY t2.display_id), '[]'::jsonb)::text
+        FROM task_dependencies td JOIN tasks t2 ON t2.id = td.depends_on
+        WHERE td.task_id = t.id) AS depends_on
+FROM tasks t
+WHERE t.project_id = sqlc.arg(project_id)
+  AND (sqlc.arg(query)::text = '' OR t.name ILIKE '%' || sqlc.arg(query)::text || '%' OR t.display_id ILIKE '%' || sqlc.arg(query)::text || '%')
+  AND (sqlc.arg(status)::text = '' OR t.status = sqlc.arg(status)::text)
+  AND (NULLIF(sqlc.arg(from_date)::text, '')::date IS NULL OR t.planned_start_date >= NULLIF(sqlc.arg(from_date)::text, '')::date)
+  AND (NULLIF(sqlc.arg(to_date)::text, '')::date IS NULL OR t.planned_end_date <= NULLIF(sqlc.arg(to_date)::text, '')::date)
+  AND (NOT sqlc.arg(late_only)::boolean OR (t.status = 'not_started' AND t.planned_start_date < CURRENT_DATE) OR (t.status = 'in_progress' AND t.planned_end_date < CURRENT_DATE))
+  AND (NOT sqlc.arg(blocked_only)::boolean OR t.id = ANY(sqlc.arg(blocked_ids)::uuid[]))
+ORDER BY
+  CASE WHEN sqlc.arg(sort_by)::text = 'name' AND sqlc.arg(sort_dir)::text = 'asc' THEN t.name END ASC,
+  CASE WHEN sqlc.arg(sort_by)::text = 'name' AND sqlc.arg(sort_dir)::text = 'desc' THEN t.name END DESC,
+  CASE WHEN sqlc.arg(sort_by)::text = 'start_date' AND sqlc.arg(sort_dir)::text = 'asc' THEN t.planned_start_date END ASC,
+  CASE WHEN sqlc.arg(sort_by)::text = 'start_date' AND sqlc.arg(sort_dir)::text = 'desc' THEN t.planned_start_date END DESC,
+  CASE WHEN sqlc.arg(sort_by)::text = 'end_date' AND sqlc.arg(sort_dir)::text = 'asc' THEN t.planned_end_date END ASC,
+  CASE WHEN sqlc.arg(sort_by)::text = 'end_date' AND sqlc.arg(sort_dir)::text = 'desc' THEN t.planned_end_date END DESC,
+  CASE WHEN sqlc.arg(sort_by)::text = 'dependents' AND sqlc.arg(sort_dir)::text = 'asc' THEN (SELECT COUNT(*) FROM task_dependencies td WHERE td.depends_on = t.id) END ASC,
+  CASE WHEN sqlc.arg(sort_by)::text = 'dependents' AND sqlc.arg(sort_dir)::text = 'desc' THEN (SELECT COUNT(*) FROM task_dependencies td WHERE td.depends_on = t.id) END DESC,
+  CASE WHEN sqlc.arg(sort_by)::text IN ('', 'id') AND sqlc.arg(sort_dir)::text <> 'desc' THEN t.display_id END ASC,
+  CASE WHEN sqlc.arg(sort_by)::text IN ('', 'id') AND sqlc.arg(sort_dir)::text = 'desc' THEN t.display_id END DESC,
+  t.display_id ASC
 LIMIT sqlc.arg(page_limit)
 OFFSET sqlc.arg(page_offset);
 
 -- name: CountTasks :one
-SELECT COUNT(*) FROM tasks WHERE project_id = $1 AND (sqlc.arg(query)::text = '' OR name ILIKE '%' || sqlc.arg(query)::text || '%' OR display_id ILIKE '%' || sqlc.arg(query)::text || '%');
+SELECT COUNT(*) FROM tasks t
+WHERE t.project_id = sqlc.arg(project_id)
+  AND (sqlc.arg(query)::text = '' OR t.name ILIKE '%' || sqlc.arg(query)::text || '%' OR t.display_id ILIKE '%' || sqlc.arg(query)::text || '%')
+  AND (sqlc.arg(status)::text = '' OR t.status = sqlc.arg(status)::text)
+  AND (NULLIF(sqlc.arg(from_date)::text, '')::date IS NULL OR t.planned_start_date >= NULLIF(sqlc.arg(from_date)::text, '')::date)
+  AND (NULLIF(sqlc.arg(to_date)::text, '')::date IS NULL OR t.planned_end_date <= NULLIF(sqlc.arg(to_date)::text, '')::date)
+  AND (NOT sqlc.arg(late_only)::boolean OR (t.status = 'not_started' AND t.planned_start_date < CURRENT_DATE) OR (t.status = 'in_progress' AND t.planned_end_date < CURRENT_DATE))
+  AND (NOT sqlc.arg(blocked_only)::boolean OR t.id = ANY(sqlc.arg(blocked_ids)::uuid[]));
 
 -- name: UpdateTask :one
 UPDATE tasks

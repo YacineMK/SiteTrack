@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -32,14 +33,31 @@ type Task struct {
 	PlannedStartDate time.Time
 	PlannedEndDate   time.Time
 	Status           string
+	DependsOn        []string
+	DependentsCount  int64
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+}
+
+type ListParams struct {
+	ProjectID   uuid.UUID
+	Query       string
+	Status      string
+	FromDate    string
+	ToDate      string
+	SortBy      string
+	SortDir     string
+	LateOnly    bool
+	BlockedOnly bool
+	BlockedIDs  []uuid.UUID
+	Limit       int32
+	Offset      int32
 }
 
 type Repository interface {
 	Create(ctx context.Context, task Task) (Task, error)
 	Get(ctx context.Context, projectID uuid.UUID, displayID string) (Task, error)
-	List(ctx context.Context, projectID uuid.UUID, query string, limit, offset int32) ([]Task, int64, error)
+	List(ctx context.Context, params ListParams) ([]Task, int64, error)
 	Update(ctx context.Context, projectID uuid.UUID, displayID, name string, start, end time.Time) (Task, error)
 	UpdateStatus(ctx context.Context, projectID uuid.UUID, displayID, status string) (Task, error)
 	Delete(ctx context.Context, projectID uuid.UUID, displayID string) (int64, error)
@@ -89,20 +107,34 @@ func (r *PostgresRepository) Get(ctx context.Context, projectID uuid.UUID, displ
 	return toTask(row), nil
 }
 
-func (r *PostgresRepository) List(ctx context.Context, projectID uuid.UUID, query string, limit, offset int32) ([]Task, int64, error) {
+func (r *PostgresRepository) List(ctx context.Context, params ListParams) ([]Task, int64, error) {
 	total, err := r.queries.CountTasks(ctx, sqlc.CountTasksParams{
-		ProjectID: projectID,
-		Query:     query,
+		ProjectID:   params.ProjectID,
+		Query:       params.Query,
+		Status:      params.Status,
+		FromDate:    params.FromDate,
+		ToDate:      params.ToDate,
+		LateOnly:    params.LateOnly,
+		BlockedOnly: params.BlockedOnly,
+		BlockedIds:  params.BlockedIDs,
 	})
 	if err != nil {
 		return nil, 0, err
 	}
 
 	rows, err := r.queries.ListTasks(ctx, sqlc.ListTasksParams{
-		ProjectID:  projectID,
-		Query:      query,
-		PageLimit:  limit,
-		PageOffset: offset,
+		ProjectID:   params.ProjectID,
+		Query:       params.Query,
+		Status:      params.Status,
+		FromDate:    params.FromDate,
+		ToDate:      params.ToDate,
+		LateOnly:    params.LateOnly,
+		BlockedOnly: params.BlockedOnly,
+		BlockedIds:  params.BlockedIDs,
+		SortBy:      params.SortBy,
+		SortDir:     params.SortDir,
+		PageLimit:   params.Limit,
+		PageOffset:  params.Offset,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -110,7 +142,7 @@ func (r *PostgresRepository) List(ctx context.Context, projectID uuid.UUID, quer
 
 	tasks := make([]Task, 0, len(rows))
 	for _, row := range rows {
-		tasks = append(tasks, toTask(row))
+		tasks = append(tasks, toListTask(row))
 	}
 	return tasks, total, nil
 }
@@ -230,6 +262,24 @@ func toTask(row sqlc.Task) Task {
 		PlannedStartDate: row.PlannedStartDate,
 		PlannedEndDate:   row.PlannedEndDate,
 		Status:           row.Status,
+		CreatedAt:        row.CreatedAt,
+		UpdatedAt:        row.UpdatedAt,
+	}
+}
+
+func toListTask(row sqlc.ListTasksRow) Task {
+	var dependsOn []string
+	_ = json.Unmarshal([]byte(row.DependsOn), &dependsOn)
+	return Task{
+		ID:               row.ID,
+		DisplayID:        row.DisplayID,
+		ProjectID:        row.ProjectID,
+		Name:             row.Name,
+		PlannedStartDate: row.PlannedStartDate,
+		PlannedEndDate:   row.PlannedEndDate,
+		Status:           row.Status,
+		DependsOn:        dependsOn,
+		DependentsCount:  row.DependentsCount,
 		CreatedAt:        row.CreatedAt,
 		UpdatedAt:        row.UpdatedAt,
 	}

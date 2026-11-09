@@ -37,6 +37,8 @@ func (u utils) ToResponse(task Task, projectDisplayID string, blocked bool) Task
 		Status:           task.Status,
 		Late:             u.Late(task),
 		Blocked:          blocked,
+		DependsOn:        task.DependsOn,
+		DependentsCount:  task.DependentsCount,
 		CreatedAt:        task.CreatedAt,
 		UpdatedAt:        task.UpdatedAt,
 	}

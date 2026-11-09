@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -28,7 +29,7 @@ var (
 type Service interface {
 	Create(ctx context.Context, projectDisplayID string, req CreateTaskRequest) (TaskResponse, error)
 	Get(ctx context.Context, projectDisplayID, taskDisplayID string) (TaskDetailResponse, error)
-	List(ctx context.Context, projectDisplayID, query string, limit, offset int32) (ListTasksResponse, error)
+	List(ctx context.Context, projectDisplayID, query, status, fromDate, toDate, sortBy, sortDir string, lateOnly, blockedOnly bool, limit, offset int32) (ListTasksResponse, error)
 	Update(ctx context.Context, projectDisplayID, taskDisplayID string, req UpdateTaskRequest) (TaskResponse, error)
 	Delete(ctx context.Context, projectDisplayID, taskDisplayID string) error
 	Start(ctx context.Context, projectDisplayID, taskDisplayID string) (TaskResponse, error)
@@ -117,7 +118,40 @@ func (s *service) Get(ctx context.Context, projectDisplayID, taskDisplayID strin
 	return s.utils.ToDetailResponse(task, project.DisplayID, upstream, downstream, blocked), nil
 }
 
-func (s *service) List(ctx context.Context, projectDisplayID, query string, limit, offset int32) (ListTasksResponse, error) {
+func (s *service) List(ctx context.Context, projectDisplayID, query, status, fromDate, toDate, sortBy, sortDir string, lateOnly, blockedOnly bool, limit, offset int32) (ListTasksResponse, error) {
+	switch status {
+	case "", StatusNotStarted, StatusInProgress, StatusDone:
+	default:
+		return ListTasksResponse{}, ErrInvalidInput
+	}
+	switch sortBy {
+	case "", "id", "name", "start_date", "end_date", "dependents":
+	default:
+		return ListTasksResponse{}, ErrInvalidInput
+	}
+	switch sortDir {
+	case "", "asc", "desc":
+	default:
+		return ListTasksResponse{}, ErrInvalidInput
+	}
+	if fromDate != "" {
+		if _, err := time.Parse(dateLayout, fromDate); err != nil {
+			return ListTasksResponse{}, ErrInvalidInput
+		}
+	}
+	if toDate != "" {
+		to, err := time.Parse(dateLayout, toDate)
+		if err != nil {
+			return ListTasksResponse{}, ErrInvalidInput
+		}
+		if fromDate != "" {
+			from, err := time.Parse(dateLayout, fromDate)
+			if err != nil || to.Before(from) {
+				return ListTasksResponse{}, ErrInvalidInput
+			}
+		}
+	}
+
 	project, err := s.projects.GetByDisplayID(ctx, projectDisplayID)
 	if err != nil {
 		return ListTasksResponse{}, err
@@ -125,17 +159,34 @@ func (s *service) List(ctx context.Context, projectDisplayID, query string, limi
 
 	limit, offset = s.utils.NormalizePagination(limit, offset)
 
-	tasks, total, err := s.repo.List(ctx, project.ID, query, limit, offset)
+	blockedMap, err := s.repo.BlockedIDs(ctx, project.ID)
+	if err != nil {
+		return ListTasksResponse{}, err
+	}
+	blockedIDs := make([]uuid.UUID, 0, len(blockedMap))
+	for id := range blockedMap {
+		blockedIDs = append(blockedIDs, id)
+	}
+
+	tasks, total, err := s.repo.List(ctx, ListParams{
+		ProjectID:   project.ID,
+		Query:       strings.TrimSpace(query),
+		Status:      status,
+		FromDate:    fromDate,
+		ToDate:      toDate,
+		SortBy:      sortBy,
+		SortDir:     sortDir,
+		LateOnly:    lateOnly,
+		BlockedOnly: blockedOnly,
+		BlockedIDs:  blockedIDs,
+		Limit:       limit,
+		Offset:      offset,
+	})
 	if err != nil {
 		return ListTasksResponse{}, err
 	}
 
-	blocked, err := s.repo.BlockedIDs(ctx, project.ID)
-	if err != nil {
-		return ListTasksResponse{}, err
-	}
-
-	return s.utils.ListResponse(tasks, project.DisplayID, blocked, total, limit, offset), nil
+	return s.utils.ListResponse(tasks, project.DisplayID, blockedMap, total, limit, offset), nil
 }
 
 func (s *service) Update(ctx context.Context, projectDisplayID, taskDisplayID string, req UpdateTaskRequest) (TaskResponse, error) {

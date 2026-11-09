@@ -45,6 +45,8 @@ type TaskResponse struct {
 	Status           string    `json:"status"`
 	Late             bool      `json:"late"`
 	Blocked          bool      `json:"blocked"`
+	DependsOn        []string  `json:"depends_on"`
+	DependentsCount  int64     `json:"dependents_count"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
