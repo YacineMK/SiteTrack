@@ -17,6 +17,8 @@ type Config struct {
 	ResendAPIKey         string
 	ResendFrom           string
 	ResendBaseURL        string
+	InviteTTL            time.Duration
+	AppBaseURL           string
 	DatabaseURL          string
 	DBMaxConns           int32
 	DBMinConns           int32
@@ -48,6 +50,8 @@ func Load() Config {
 		ResendAPIKey:         getEnv("RESEND_API_KEY", ""),
 		ResendFrom:           getEnv("RESEND_FROM", "onboarding@resend.dev"),
 		ResendBaseURL:        getEnv("RESEND_BASE_URL", "https://api.resend.com"),
+		InviteTTL:            min(getEnvDuration("INVITE_TTL", time.Hour), time.Hour),
+		AppBaseURL:           getEnv("APP_BASE_URL", "http://localhost:8080"),
 		DatabaseURL:          getEnv("DATABASE_URL", "postgres://sitetrack:sitetrack@localhost:5432/sitetrack?sslmode=disable"),
 		DBMaxConns:           int32(getEnvInt("DB_MAX_CONNS", 10)),
 		DBMinConns:           int32(getEnvInt("DB_MIN_CONNS", 2)),

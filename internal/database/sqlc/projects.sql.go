@@ -28,6 +28,23 @@ func (q *Queries) AddProjectMember(ctx context.Context, arg AddProjectMemberPara
 	return err
 }
 
+const addProjectMemberIfAbsent = `-- name: AddProjectMemberIfAbsent :exec
+INSERT INTO project_members (project_id, user_id, is_admin)
+VALUES ($1, $2, $3)
+ON CONFLICT (project_id, user_id) DO NOTHING
+`
+
+type AddProjectMemberIfAbsentParams struct {
+	ProjectID uuid.UUID
+	UserID    uuid.UUID
+	IsAdmin   bool
+}
+
+func (q *Queries) AddProjectMemberIfAbsent(ctx context.Context, arg AddProjectMemberIfAbsentParams) error {
+	_, err := q.db.Exec(ctx, addProjectMemberIfAbsent, arg.ProjectID, arg.UserID, arg.IsAdmin)
+	return err
+}
+
 const countProjects = `-- name: CountProjects :one
 SELECT COUNT(*)
 FROM projects p
@@ -129,6 +146,23 @@ func (q *Queries) DeleteProject(ctx context.Context, displayID string) (int64, e
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const findUserByEmail = `-- name: FindUserByEmail :one
+SELECT id, name, email FROM users WHERE email = $1
+`
+
+type FindUserByEmailRow struct {
+	ID    uuid.UUID
+	Name  string
+	Email string
+}
+
+func (q *Queries) FindUserByEmail(ctx context.Context, email string) (FindUserByEmailRow, error) {
+	row := q.db.QueryRow(ctx, findUserByEmail, email)
+	var i FindUserByEmailRow
+	err := row.Scan(&i.ID, &i.Name, &i.Email)
+	return i, err
 }
 
 const getProjectByDisplayID = `-- name: GetProjectByDisplayID :one

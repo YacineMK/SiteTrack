@@ -12,6 +12,39 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const completeDeliveryStatus = `-- name: CompleteDeliveryStatus :one
+UPDATE deliveries
+SET status = $2,
+    received_at = NOW(),
+    received_by = $3
+WHERE id = $1 AND status = 'in_transit'
+RETURNING id, sender_type, sender_id, receiver_type, receiver_id, status, sent_at, received_at, sent_by, received_by
+`
+
+type CompleteDeliveryStatusParams struct {
+	ID         uuid.UUID
+	Status     DeliveryStatus
+	ReceivedBy pgtype.UUID
+}
+
+func (q *Queries) CompleteDeliveryStatus(ctx context.Context, arg CompleteDeliveryStatusParams) (Delivery, error) {
+	row := q.db.QueryRow(ctx, completeDeliveryStatus, arg.ID, arg.Status, arg.ReceivedBy)
+	var i Delivery
+	err := row.Scan(
+		&i.ID,
+		&i.SenderType,
+		&i.SenderID,
+		&i.ReceiverType,
+		&i.ReceiverID,
+		&i.Status,
+		&i.SentAt,
+		&i.ReceivedAt,
+		&i.SentBy,
+		&i.ReceivedBy,
+	)
+	return i, err
+}
+
 const countCompanyDeliveries = `-- name: CountCompanyDeliveries :one
 SELECT COUNT(*)
 FROM deliveries d
@@ -46,9 +79,9 @@ func (q *Queries) CountProjectDeliveries(ctx context.Context, arg CountProjectDe
 }
 
 const createDelivery = `-- name: CreateDelivery :one
-INSERT INTO deliveries (id, sender_type, sender_id, receiver_type, receiver_id)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, sender_type, sender_id, receiver_type, receiver_id, status, sent_at, received_at
+INSERT INTO deliveries (id, sender_type, sender_id, receiver_type, receiver_id, sent_by)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, sender_type, sender_id, receiver_type, receiver_id, status, sent_at, received_at, sent_by, received_by
 `
 
 type CreateDeliveryParams struct {
@@ -57,6 +90,7 @@ type CreateDeliveryParams struct {
 	SenderID     pgtype.UUID
 	ReceiverType DeliveryParty
 	ReceiverID   pgtype.UUID
+	SentBy       pgtype.UUID
 }
 
 func (q *Queries) CreateDelivery(ctx context.Context, arg CreateDeliveryParams) (Delivery, error) {
@@ -66,6 +100,7 @@ func (q *Queries) CreateDelivery(ctx context.Context, arg CreateDeliveryParams) 
 		arg.SenderID,
 		arg.ReceiverType,
 		arg.ReceiverID,
+		arg.SentBy,
 	)
 	var i Delivery
 	err := row.Scan(
@@ -77,6 +112,8 @@ func (q *Queries) CreateDelivery(ctx context.Context, arg CreateDeliveryParams) 
 		&i.Status,
 		&i.SentAt,
 		&i.ReceivedAt,
+		&i.SentBy,
+		&i.ReceivedBy,
 	)
 	return i, err
 }
@@ -104,7 +141,7 @@ func (q *Queries) CreateDeliveryLine(ctx context.Context, arg CreateDeliveryLine
 }
 
 const getDelivery = `-- name: GetDelivery :one
-SELECT id, sender_type, sender_id, receiver_type, receiver_id, status, sent_at, received_at
+SELECT id, sender_type, sender_id, receiver_type, receiver_id, status, sent_at, received_at, sent_by, received_by
 FROM deliveries
 WHERE id = $1
 `
@@ -121,6 +158,8 @@ func (q *Queries) GetDelivery(ctx context.Context, id uuid.UUID) (Delivery, erro
 		&i.Status,
 		&i.SentAt,
 		&i.ReceivedAt,
+		&i.SentBy,
+		&i.ReceivedBy,
 	)
 	return i, err
 }
@@ -166,7 +205,7 @@ func (q *Queries) GetDeliveryLines(ctx context.Context, deliveryID uuid.UUID) ([
 }
 
 const listCompanyDeliveries = `-- name: ListCompanyDeliveries :many
-SELECT d.id, d.sender_type, d.sender_id, d.receiver_type, d.receiver_id, d.status, d.sent_at, d.received_at
+SELECT d.id, d.sender_type, d.sender_id, d.receiver_type, d.receiver_id, d.status, d.sent_at, d.received_at, d.sent_by, d.received_by
 FROM deliveries d
 WHERE (d.sender_type = 'company' OR d.receiver_type = 'company')
   AND ($1::text = '' OR d.status::text = $1::text)
@@ -198,6 +237,8 @@ func (q *Queries) ListCompanyDeliveries(ctx context.Context, arg ListCompanyDeli
 			&i.Status,
 			&i.SentAt,
 			&i.ReceivedAt,
+			&i.SentBy,
+			&i.ReceivedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -210,7 +251,7 @@ func (q *Queries) ListCompanyDeliveries(ctx context.Context, arg ListCompanyDeli
 }
 
 const listProjectDeliveries = `-- name: ListProjectDeliveries :many
-SELECT d.id, d.sender_type, d.sender_id, d.receiver_type, d.receiver_id, d.status, d.sent_at, d.received_at
+SELECT d.id, d.sender_type, d.sender_id, d.receiver_type, d.receiver_id, d.status, d.sent_at, d.received_at, d.sent_by, d.received_by
 FROM deliveries d
 WHERE ((d.sender_type = 'project' AND d.sender_id = $1::uuid) OR (d.receiver_type = 'project' AND d.receiver_id = $1::uuid))
   AND ($2::text = '' OR d.status::text = $2::text)
@@ -248,6 +289,8 @@ func (q *Queries) ListProjectDeliveries(ctx context.Context, arg ListProjectDeli
 			&i.Status,
 			&i.SentAt,
 			&i.ReceivedAt,
+			&i.SentBy,
+			&i.ReceivedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -264,7 +307,7 @@ UPDATE deliveries
 SET status = $2,
     received_at = NOW()
 WHERE id = $1 AND status = 'in_transit'
-RETURNING id, sender_type, sender_id, receiver_type, receiver_id, status, sent_at, received_at
+RETURNING id, sender_type, sender_id, receiver_type, receiver_id, status, sent_at, received_at, sent_by, received_by
 `
 
 type UpdateDeliveryStatusParams struct {
@@ -284,6 +327,8 @@ func (q *Queries) UpdateDeliveryStatus(ctx context.Context, arg UpdateDeliverySt
 		&i.Status,
 		&i.SentAt,
 		&i.ReceivedAt,
+		&i.SentBy,
+		&i.ReceivedBy,
 	)
 	return i, err
 }

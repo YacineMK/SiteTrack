@@ -1,14 +1,14 @@
 -- name: CreateDelivery :one
-INSERT INTO deliveries (id, sender_type, sender_id, receiver_type, receiver_id)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, sender_type, sender_id, receiver_type, receiver_id, status, sent_at, received_at;
+INSERT INTO deliveries (id, sender_type, sender_id, receiver_type, receiver_id, sent_by)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, sender_type, sender_id, receiver_type, receiver_id, status, sent_at, received_at, sent_by, received_by;
 
 -- name: CreateDeliveryLine :exec
 INSERT INTO delivery_lines (id, delivery_id, material_id, quantity)
 VALUES ($1, $2, $3, $4);
 
 -- name: GetDelivery :one
-SELECT id, sender_type, sender_id, receiver_type, receiver_id, status, sent_at, received_at
+SELECT id, sender_type, sender_id, receiver_type, receiver_id, status, sent_at, received_at, sent_by, received_by
 FROM deliveries
 WHERE id = $1;
 
@@ -24,10 +24,18 @@ UPDATE deliveries
 SET status = $2,
     received_at = NOW()
 WHERE id = $1 AND status = 'in_transit'
-RETURNING id, sender_type, sender_id, receiver_type, receiver_id, status, sent_at, received_at;
+RETURNING id, sender_type, sender_id, receiver_type, receiver_id, status, sent_at, received_at, sent_by, received_by;
+
+-- name: CompleteDeliveryStatus :one
+UPDATE deliveries
+SET status = $2,
+    received_at = NOW(),
+    received_by = $3
+WHERE id = $1 AND status = 'in_transit'
+RETURNING id, sender_type, sender_id, receiver_type, receiver_id, status, sent_at, received_at, sent_by, received_by;
 
 -- name: ListCompanyDeliveries :many
-SELECT d.id, d.sender_type, d.sender_id, d.receiver_type, d.receiver_id, d.status, d.sent_at, d.received_at
+SELECT d.id, d.sender_type, d.sender_id, d.receiver_type, d.receiver_id, d.status, d.sent_at, d.received_at, d.sent_by, d.received_by
 FROM deliveries d
 WHERE (d.sender_type = 'company' OR d.receiver_type = 'company')
   AND (sqlc.arg(status_filter)::text = '' OR d.status::text = sqlc.arg(status_filter)::text)
@@ -41,7 +49,7 @@ WHERE (d.sender_type = 'company' OR d.receiver_type = 'company')
   AND (sqlc.arg(status_filter)::text = '' OR d.status::text = sqlc.arg(status_filter)::text);
 
 -- name: ListProjectDeliveries :many
-SELECT d.id, d.sender_type, d.sender_id, d.receiver_type, d.receiver_id, d.status, d.sent_at, d.received_at
+SELECT d.id, d.sender_type, d.sender_id, d.receiver_type, d.receiver_id, d.status, d.sent_at, d.received_at, d.sent_by, d.received_by
 FROM deliveries d
 WHERE ((d.sender_type = 'project' AND d.sender_id = sqlc.arg(project_id)::uuid) OR (d.receiver_type = 'project' AND d.receiver_id = sqlc.arg(project_id)::uuid))
   AND (sqlc.arg(status_filter)::text = '' OR d.status::text = sqlc.arg(status_filter)::text)

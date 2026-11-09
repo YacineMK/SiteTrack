@@ -72,6 +72,14 @@ DELETE FROM project_members WHERE project_id = $1 AND user_id = $2;
 -- name: LockProjectAdmins :many
 SELECT user_id FROM project_members WHERE project_id = $1 AND is_admin FOR UPDATE;
 
+-- name: AddProjectMemberIfAbsent :exec
+INSERT INTO project_members (project_id, user_id, is_admin)
+VALUES ($1, $2, $3)
+ON CONFLICT (project_id, user_id) DO NOTHING;
+
+-- name: FindUserByEmail :one
+SELECT id, name, email FROM users WHERE email = $1;
+
 -- name: UpdateProject :one
 UPDATE projects
 SET name = $2,

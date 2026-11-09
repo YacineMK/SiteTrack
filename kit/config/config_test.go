@@ -14,6 +14,8 @@ var allKeys = []string{
 	"RESEND_API_KEY",
 	"RESEND_FROM",
 	"RESEND_BASE_URL",
+	"INVITE_TTL",
+	"APP_BASE_URL",
 	"DATABASE_URL",
 	"DB_MAX_CONNS",
 	"DB_MIN_CONNS",

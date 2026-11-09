@@ -122,6 +122,8 @@ type Delivery struct {
 	Status       DeliveryStatus
 	SentAt       time.Time
 	ReceivedAt   pgtype.Timestamptz
+	SentBy       pgtype.UUID
+	ReceivedBy   pgtype.UUID
 }
 
 type DeliveryLine struct {

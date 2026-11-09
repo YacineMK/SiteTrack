@@ -68,6 +68,18 @@ func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotification
 	return i, err
 }
 
+const deleteNotification = `-- name: DeleteNotification :execrows
+DELETE FROM notifications WHERE id = $1
+`
+
+func (q *Queries) DeleteNotification(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteNotification, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getNotification = `-- name: GetNotification :one
 SELECT id, user_id, type, title, body, data, read_at, created_at
 FROM notifications
@@ -88,6 +100,42 @@ func (q *Queries) GetNotification(ctx context.Context, id uuid.UUID) (Notificati
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listInvitationNotifications = `-- name: ListInvitationNotifications :many
+SELECT id, user_id, type, title, body, data, read_at, created_at
+FROM notifications
+WHERE user_id = $1 AND type = 'app_invite' AND read_at IS NULL
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListInvitationNotifications(ctx context.Context, userID uuid.UUID) ([]Notification, error) {
+	rows, err := q.db.Query(ctx, listInvitationNotifications, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Notification{}
+	for rows.Next() {
+		var i Notification
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Type,
+			&i.Title,
+			&i.Body,
+			&i.Data,
+			&i.ReadAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listNotifications = `-- name: ListNotifications :many
@@ -138,6 +186,29 @@ func (q *Queries) ListNotifications(ctx context.Context, arg ListNotificationsPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockNotification = `-- name: LockNotification :one
+SELECT id, user_id, type, title, body, data, read_at, created_at
+FROM notifications
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) LockNotification(ctx context.Context, id uuid.UUID) (Notification, error) {
+	row := q.db.QueryRow(ctx, lockNotification, id)
+	var i Notification
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Type,
+		&i.Title,
+		&i.Body,
+		&i.Data,
+		&i.ReadAt,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const markNotificationRead = `-- name: MarkNotificationRead :one
