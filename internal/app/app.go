@@ -26,8 +26,6 @@ type module interface {
 }
 
 type App struct {
-	postgres       *database.Postgres
-	redis          *kitredis.Redis
 	server         *server.Server
 	authMiddleware func(http.Handler) http.Handler
 	public         []module
@@ -45,8 +43,6 @@ func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtMan
 	})
 
 	a := &App{
-		postgres:       postgres,
-		redis:          redis,
 		server:         server.New(addr),
 		authMiddleware: middleware.AuthenticateMiddleware(authModule.Service()),
 		public:         []module{authModule},

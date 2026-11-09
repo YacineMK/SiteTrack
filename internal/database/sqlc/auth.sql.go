@@ -90,14 +90,3 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 	)
 	return i, err
 }
-
-const incrementUserTokenVersion = `-- name: IncrementUserTokenVersion :exec
-UPDATE users
-SET token_version = token_version + 1, updated_at = NOW()
-WHERE id = $1
-`
-
-func (q *Queries) IncrementUserTokenVersion(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, incrementUserTokenVersion, id)
-	return err
-}
