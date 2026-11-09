@@ -119,7 +119,7 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.JWTRefreshTTL != 7*24*time.Hour {
 		t.Fatalf("JWTRefreshTTL = %v, want 168h", cfg.JWTRefreshTTL)
 	}
-	if cfg.ResendAPIKey != "" || cfg.ResendFrom != "" || cfg.ResendBaseURL != "https://api.resend.com" {
+	if cfg.ResendAPIKey != "" || cfg.ResendFrom != "onboarding@resend.dev" || cfg.ResendBaseURL != "https://api.resend.com" {
 		t.Fatalf("Resend defaults = %q/%q/%q", cfg.ResendAPIKey, cfg.ResendFrom, cfg.ResendBaseURL)
 	}
 	if cfg.DatabaseURL != "postgres://sitetrack:sitetrack@localhost:5432/sitetrack?sslmode=disable" {
