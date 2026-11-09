@@ -11,17 +11,21 @@ type Server struct {
 	http *http.Server
 }
 
-func New(port string) *Server {
+func New(addr string) *Server {
 	r := chi.NewRouter()
 	return &Server{
 		mux: r,
 		http: &http.Server{
-			Addr:    port,
+			Addr:    addr,
 			Handler: r,
 		},
 	}
 }
 
-func (s *Server) start() error {
+func (s *Server) Mux() *chi.Mux {
+	return s.mux
+}
+
+func (s *Server) Start() error {
 	return s.http.ListenAndServe()
 }
