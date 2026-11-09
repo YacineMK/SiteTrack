@@ -9,6 +9,7 @@ import (
 	"github.com/YacineMK/SiteTrack/internal/auth"
 	"github.com/YacineMK/SiteTrack/internal/companystore"
 	"github.com/YacineMK/SiteTrack/internal/database"
+	"github.com/YacineMK/SiteTrack/internal/middleware"
 	"github.com/YacineMK/SiteTrack/internal/roles"
 	"github.com/YacineMK/SiteTrack/internal/server"
 	kitjwt "github.com/YacineMK/SiteTrack/kit/jwt"
@@ -30,7 +31,6 @@ type App struct {
 
 func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtManager *kitjwt.Manager, cookieSecure bool) *App {
 	rolesModule := roles.New(roles.Dependencies{DB: postgres.Pool})
-	authz := rolesModule.AuthZ()
 
 	authModule := auth.New(auth.Dependencies{
 		DB:           postgres.Pool,
@@ -43,10 +43,10 @@ func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtMan
 		postgres:       postgres,
 		redis:          redis,
 		server:         server.New(addr),
-		authMiddleware: authModule.Middleware,
+		authMiddleware: middleware.AuthenticateMiddleware(authModule.Service()),
 		public:         []module{authModule},
 		protected: []module{
-			companystore.New(companystore.Dependencies{AuthZ: authz}),
+			companystore.New(),
 			rolesModule,
 		},
 	}

@@ -5,25 +5,19 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/YacineMK/SiteTrack/internal/auth"
+	"github.com/YacineMK/SiteTrack/internal/middleware"
 	jsonutil "github.com/YacineMK/SiteTrack/kit/json"
 )
 
-type Dependencies struct {
-	AuthZ *auth.AuthZ
-}
+type Handler struct{}
 
-type Handler struct {
-	authz *auth.AuthZ
-}
-
-func New(deps Dependencies) *Handler {
-	return &Handler{authz: deps.AuthZ}
+func New() *Handler {
+	return &Handler{}
 }
 
 func (h *Handler) Routes(r chi.Router) {
 	r.Route("/company-store", func(r chi.Router) {
-		r.Use(h.authz.RequireAppPolicy("company_store", "read"))
+		r.Use(middleware.AuthorizationMiddleware("company_store_manager", "super_admin"))
 		r.Get("/", h.list)
 	})
 }

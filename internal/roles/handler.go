@@ -7,17 +7,15 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	"github.com/YacineMK/SiteTrack/internal/auth"
 	jsonutil "github.com/YacineMK/SiteTrack/kit/json"
 )
 
 type Handler struct {
-	svc   *Service
-	authz *auth.AuthZ
+	svc *Service
 }
 
-func NewHandler(svc *Service, authz *auth.AuthZ) *Handler {
-	return &Handler{svc: svc, authz: authz}
+func NewHandler(svc *Service) *Handler {
+	return &Handler{svc: svc}
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {

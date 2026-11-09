@@ -21,10 +21,6 @@ func NewService(repo Repository) *Service {
 	return &Service{repo: repo}
 }
 
-func (s *Service) HasPolicy(ctx context.Context, role, resource, action string) (bool, error) {
-	return s.repo.HasPolicy(ctx, role, resource, action)
-}
-
 func (s *Service) CreateRole(ctx context.Context, req CreateRoleRequest) (RoleResponse, error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Description = strings.TrimSpace(req.Description)
@@ -44,6 +40,7 @@ func (s *Service) ListRoles(ctx context.Context) ([]RoleResponse, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	response := make([]RoleResponse, 0, len(roles))
 	for _, role := range roles {
 		response = append(response, toRoleResponse(role))
@@ -81,6 +78,7 @@ func (s *Service) ListPolicies(ctx context.Context, roleID uuid.UUID) ([]PolicyR
 	if err != nil {
 		return nil, err
 	}
+
 	response := make([]PolicyResponse, 0, len(policies))
 	for _, policy := range policies {
 		response = append(response, PolicyResponse{

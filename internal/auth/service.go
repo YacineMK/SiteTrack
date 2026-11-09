@@ -132,28 +132,43 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (Session, er
 }
 
 func (s *Service) Logout(ctx context.Context, accessToken, refreshToken string) error {
-	if accessToken == "" || refreshToken == "" {
+	if accessToken == "" && refreshToken == "" {
 		return ErrUnauthorized
 	}
 
-	accessClaims, err := s.jwt.ParseAccess(accessToken)
-	if err != nil {
-		return ErrUnauthorized
+	var accessClaims *kitjwt.Claims
+	if accessToken != "" {
+		if claims, err := s.jwt.ParseAccess(accessToken); err == nil {
+			accessClaims = claims
+		}
 	}
 
-	refreshClaims, err := s.jwt.ParseRefresh(refreshToken)
-	if err != nil {
-		return ErrUnauthorized
+	var refreshClaims *kitjwt.Claims
+	if refreshToken != "" {
+		claims, err := s.jwt.ParseRefresh(refreshToken)
+		if err != nil {
+			return ErrUnauthorized
+		}
+		refreshClaims = claims
 	}
 
-	if accessClaims.UserID != refreshClaims.UserID {
-		return ErrUnauthorized
+	if accessClaims != nil && refreshClaims != nil && accessClaims.UserID != refreshClaims.UserID {
+		accessClaims = nil
 	}
 
-	if err := s.revoke(ctx, accessClaims); err != nil {
-		return err
+	if accessClaims != nil {
+		if err := s.revoke(ctx, accessClaims); err != nil {
+			return err
+		}
 	}
-	return s.revoke(ctx, refreshClaims)
+
+	if refreshClaims != nil {
+		if err := s.revoke(ctx, refreshClaims); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *Service) Me(ctx context.Context, userID uuid.UUID) (UserResponse, error) {
@@ -167,7 +182,7 @@ func (s *Service) Me(ctx context.Context, userID uuid.UUID) (UserResponse, error
 	return toUserResponse(user), nil
 }
 
-func (s *Service) Authenticate(ctx context.Context, accessToken string) (*kitjwt.Claims, error) {
+func (s *Service) ValidateAccessToken(ctx context.Context, accessToken string) (*kitjwt.Claims, error) {
 	claims, err := s.jwt.ParseAccess(accessToken)
 	if err != nil {
 		return nil, ErrUnauthorized

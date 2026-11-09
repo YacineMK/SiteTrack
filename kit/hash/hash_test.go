@@ -18,6 +18,9 @@ func TestHashAndVerify(t *testing.T) {
 	if !strings.HasPrefix(hashed, "$argon2id$") {
 		t.Fatalf("expected argon2id hash, got %q", hashed)
 	}
+	if !strings.Contains(hashed, "m=32768,t=3,p=1") {
+		t.Fatalf("unexpected argon2 parameters in %q", hashed)
+	}
 
 	match, err := Verify(password, hashed)
 	if err != nil {
