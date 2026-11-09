@@ -50,7 +50,7 @@ func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtMan
 		public:         []module{authModule},
 		protected: []module{
 			materials.New(materials.Dependencies{DB: postgres.Pool}),
-			companystore.New(),
+			companystore.New(companystore.Dependencies{DB: postgres.Pool}),
 			rolesModule,
 			projects.New(projects.Dependencies{DB: postgres.Pool, Redis: redis}),
 			tasks.New(tasks.Dependencies{DB: postgres.Pool, Redis: redis}),
