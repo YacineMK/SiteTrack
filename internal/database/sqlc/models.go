@@ -39,6 +39,28 @@ type RolePolicy struct {
 	Action   string
 }
 
+type Task struct {
+	ID               uuid.UUID
+	DisplayID        string
+	ProjectID        uuid.UUID
+	Name             string
+	PlannedStartDate time.Time
+	PlannedEndDate   time.Time
+	Status           string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+type TaskDependency struct {
+	TaskID    uuid.UUID
+	DependsOn uuid.UUID
+}
+
+type TaskIDCounter struct {
+	ProjectID uuid.UUID
+	LastValue int64
+}
+
 type User struct {
 	ID           uuid.UUID
 	Name         string

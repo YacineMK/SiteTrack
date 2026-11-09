@@ -13,6 +13,7 @@ import (
 	"github.com/YacineMK/SiteTrack/internal/projects"
 	"github.com/YacineMK/SiteTrack/internal/roles"
 	"github.com/YacineMK/SiteTrack/internal/server"
+	"github.com/YacineMK/SiteTrack/internal/tasks"
 	kitjwt "github.com/YacineMK/SiteTrack/kit/jwt"
 	kitredis "github.com/YacineMK/SiteTrack/kit/redis"
 )
@@ -50,6 +51,7 @@ func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtMan
 			companystore.New(),
 			rolesModule,
 			projects.New(projects.Dependencies{DB: postgres.Pool, Redis: redis}),
+			tasks.New(tasks.Dependencies{DB: postgres.Pool, Redis: redis}),
 		},
 	}
 	a.routes()
