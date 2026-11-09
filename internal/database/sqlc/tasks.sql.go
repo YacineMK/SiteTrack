@@ -15,7 +15,7 @@ import (
 const addTaskDependency = `-- name: AddTaskDependency :execrows
 WITH RECURSIVE upstream AS (
     SELECT td.depends_on AS id FROM task_dependencies td WHERE td.task_id = $2
-    UNION ALL
+    UNION
     SELECT td.depends_on FROM task_dependencies td JOIN upstream u ON td.task_id = u.id
 )
 INSERT INTO task_dependencies (task_id, depends_on)
@@ -142,7 +142,7 @@ WITH RECURSIVE reach AS (
     FROM task_dependencies td
     JOIN tasks t ON t.id = td.task_id
     WHERE t.project_id = $1
-    UNION ALL
+    UNION
     SELECT r.root, td.depends_on
     FROM task_dependencies td
     JOIN reach r ON td.task_id = r.upstream
@@ -176,7 +176,7 @@ func (q *Queries) ListBlockedTasks(ctx context.Context, targetProjectID uuid.UUI
 const listDownstreamDependencies = `-- name: ListDownstreamDependencies :many
 WITH RECURSIVE downstream AS (
     SELECT td.task_id AS id, 1 AS depth FROM task_dependencies td WHERE td.depends_on = $1
-    UNION ALL
+    UNION
     SELECT td.task_id, d.depth + 1 FROM task_dependencies td JOIN downstream d ON td.depends_on = d.id
 )
 SELECT t.display_id, t.name, t.status, MIN(d.depth)::int AS steps
@@ -272,7 +272,7 @@ func (q *Queries) ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, e
 const listUpstreamDependencies = `-- name: ListUpstreamDependencies :many
 WITH RECURSIVE upstream AS (
     SELECT td.depends_on AS id, 1 AS depth FROM task_dependencies td WHERE td.task_id = $1
-    UNION ALL
+    UNION
     SELECT td.depends_on, u.depth + 1 FROM task_dependencies td JOIN upstream u ON td.task_id = u.id
 )
 SELECT t.display_id, t.name, t.status, MIN(u.depth)::int AS steps
@@ -333,7 +333,7 @@ func (q *Queries) RemoveTaskDependency(ctx context.Context, arg RemoveTaskDepend
 const taskHasBlockingUpstream = `-- name: TaskHasBlockingUpstream :one
 WITH RECURSIVE upstream AS (
     SELECT td.depends_on AS id FROM task_dependencies td WHERE td.task_id = $1
-    UNION ALL
+    UNION
     SELECT td.depends_on FROM task_dependencies td JOIN upstream u ON td.task_id = u.id
 )
 SELECT EXISTS (
@@ -351,7 +351,7 @@ func (q *Queries) TaskHasBlockingUpstream(ctx context.Context, targetID uuid.UUI
 const taskHasStartedDownstream = `-- name: TaskHasStartedDownstream :one
 WITH RECURSIVE downstream AS (
     SELECT td.task_id AS id FROM task_dependencies td WHERE td.depends_on = $1
-    UNION ALL
+    UNION
     SELECT td.task_id FROM task_dependencies td JOIN downstream d ON td.depends_on = d.id
 )
 SELECT EXISTS (

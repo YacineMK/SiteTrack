@@ -42,7 +42,7 @@ DELETE FROM tasks WHERE project_id = $1 AND display_id = $2;
 -- name: AddTaskDependency :execrows
 WITH RECURSIVE upstream AS (
     SELECT td.depends_on AS id FROM task_dependencies td WHERE td.task_id = sqlc.arg(depends_on_id)
-    UNION ALL
+    UNION
     SELECT td.depends_on FROM task_dependencies td JOIN upstream u ON td.task_id = u.id
 )
 INSERT INTO task_dependencies (task_id, depends_on)
@@ -55,7 +55,7 @@ DELETE FROM task_dependencies WHERE task_id = $1 AND depends_on = $2;
 -- name: TaskHasBlockingUpstream :one
 WITH RECURSIVE upstream AS (
     SELECT td.depends_on AS id FROM task_dependencies td WHERE td.task_id = sqlc.arg(target_id)
-    UNION ALL
+    UNION
     SELECT td.depends_on FROM task_dependencies td JOIN upstream u ON td.task_id = u.id
 )
 SELECT EXISTS (
@@ -65,7 +65,7 @@ SELECT EXISTS (
 -- name: TaskHasStartedDownstream :one
 WITH RECURSIVE downstream AS (
     SELECT td.task_id AS id FROM task_dependencies td WHERE td.depends_on = sqlc.arg(target_id)
-    UNION ALL
+    UNION
     SELECT td.task_id FROM task_dependencies td JOIN downstream d ON td.depends_on = d.id
 )
 SELECT EXISTS (
@@ -75,7 +75,7 @@ SELECT EXISTS (
 -- name: ListUpstreamDependencies :many
 WITH RECURSIVE upstream AS (
     SELECT td.depends_on AS id, 1 AS depth FROM task_dependencies td WHERE td.task_id = sqlc.arg(target_id)
-    UNION ALL
+    UNION
     SELECT td.depends_on, u.depth + 1 FROM task_dependencies td JOIN upstream u ON td.task_id = u.id
 )
 SELECT t.display_id, t.name, t.status, MIN(u.depth)::int AS steps
@@ -86,7 +86,7 @@ ORDER BY steps, t.display_id;
 -- name: ListDownstreamDependencies :many
 WITH RECURSIVE downstream AS (
     SELECT td.task_id AS id, 1 AS depth FROM task_dependencies td WHERE td.depends_on = sqlc.arg(target_id)
-    UNION ALL
+    UNION
     SELECT td.task_id, d.depth + 1 FROM task_dependencies td JOIN downstream d ON td.depends_on = d.id
 )
 SELECT t.display_id, t.name, t.status, MIN(d.depth)::int AS steps
@@ -100,7 +100,7 @@ WITH RECURSIVE reach AS (
     FROM task_dependencies td
     JOIN tasks t ON t.id = td.task_id
     WHERE t.project_id = sqlc.arg(target_project_id)
-    UNION ALL
+    UNION
     SELECT r.root, td.depends_on
     FROM task_dependencies td
     JOIN reach r ON td.task_id = r.upstream
