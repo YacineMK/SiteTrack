@@ -18,6 +18,7 @@ import (
 	"github.com/YacineMK/SiteTrack/kit/config"
 	kitjwt "github.com/YacineMK/SiteTrack/kit/jwt"
 	kitredis "github.com/YacineMK/SiteTrack/kit/redis"
+	kitresend "github.com/YacineMK/SiteTrack/kit/resend"
 )
 
 func main() {
@@ -58,6 +59,8 @@ func main() {
 	runCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	mailClient := kitresend.New(cfg.ResendAPIKey, cfg.ResendFrom, cfg.ResendBaseURL)
+
 	outboxWorker := worker.New(worker.Dependencies{
 		DB: postgres.Pool,
 		Redis: asynq.RedisClientOpt{
@@ -73,6 +76,7 @@ func main() {
 			MaxAttempts:  cfg.OutboxMaxAttempts,
 		},
 	})
+	outboxWorker.Handle(worker.TaskEmail, worker.NewEmailHandler(postgres.Pool, mailClient).Handle)
 
 	go func() {
 		if err := outboxWorker.Run(runCtx); err != nil && !errors.Is(err, context.Canceled) {
