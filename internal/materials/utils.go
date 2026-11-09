@@ -55,6 +55,8 @@ func (utils) WriteServiceError(w http.ResponseWriter, err error) {
 		jsonutil.Error(w, http.StatusNotFound, "material not found")
 	case errors.Is(err, ErrDuplicate):
 		jsonutil.Error(w, http.StatusConflict, "material already exists")
+	case errors.Is(err, ErrInUse):
+		jsonutil.Error(w, http.StatusConflict, "material is used by deliveries")
 	default:
 		jsonutil.Error(w, http.StatusInternalServerError, "internal server error")
 	}

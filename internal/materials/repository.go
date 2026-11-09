@@ -15,6 +15,7 @@ import (
 var (
 	ErrNotFound  = errors.New("material not found")
 	ErrDuplicate = errors.New("material already exists")
+	ErrInUse     = errors.New("material is used by deliveries")
 )
 
 type Material struct {
@@ -109,7 +110,15 @@ func (r *PostgresRepository) Update(ctx context.Context, id uuid.UUID, name, cat
 }
 
 func (r *PostgresRepository) Delete(ctx context.Context, id uuid.UUID) (int64, error) {
-	return r.queries.DeleteMaterial(ctx, id)
+	rows, err := r.queries.DeleteMaterial(ctx, id)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			return 0, ErrInUse
+		}
+		return 0, err
+	}
+	return rows, nil
 }
 
 func mapDuplicate(err error) error {
