@@ -124,8 +124,12 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (Session, er
 		return Session{}, err
 	}
 
-	if err := s.revoke(ctx, claims); err != nil {
+	claimed, err := s.claim(ctx, claims)
+	if err != nil {
 		return Session{}, err
+	}
+	if !claimed {
+		return Session{}, ErrUnauthorized
 	}
 
 	return newSession(pair, user), nil
@@ -230,6 +234,17 @@ func (s *Service) revoke(ctx context.Context, claims *kitjwt.Claims) error {
 		return nil
 	}
 	return s.blacklist.Add(ctx, claims.ID, ttl)
+}
+
+func (s *Service) claim(ctx context.Context, claims *kitjwt.Claims) (bool, error) {
+	if claims.ExpiresAt == nil {
+		return false, nil
+	}
+	ttl := time.Until(claims.ExpiresAt.Time)
+	if ttl <= 0 {
+		return false, nil
+	}
+	return s.blacklist.Claim(ctx, claims.ID, ttl)
 }
 
 func newSession(pair kitjwt.Pair, user User) Session {
