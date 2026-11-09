@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -42,17 +43,19 @@ const countProjectStock = `-- name: CountProjectStock :one
 SELECT COUNT(*)
 FROM project_store_stock s
 JOIN materials m ON m.id = s.material_id
-WHERE s.project_id = $1
+WHERE s.project_id = $1::uuid
   AND ($2::text = '' OR m.name ILIKE '%' || $2::text || '%' OR m.category ILIKE '%' || $2::text || '%')
+  AND ($3::text = '' OR m.category = $3::text)
 `
 
 type CountProjectStockParams struct {
 	ProjectID uuid.UUID
 	Query     string
+	Category  string
 }
 
 func (q *Queries) CountProjectStock(ctx context.Context, arg CountProjectStockParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countProjectStock, arg.ProjectID, arg.Query)
+	row := q.db.QueryRow(ctx, countProjectStock, arg.ProjectID, arg.Query, arg.Category)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -113,34 +116,58 @@ func (q *Queries) GetProjectStock(ctx context.Context, arg GetProjectStockParams
 }
 
 const listProjectStock = `-- name: ListProjectStock :many
-SELECT m.id AS material_id, m.name, m.category, m.unit, s.quantity
+SELECT m.id AS material_id, m.name, m.category, m.unit, s.quantity, ld.last_delivery
 FROM project_store_stock s
 JOIN materials m ON m.id = s.material_id
-WHERE s.project_id = $1
+LEFT JOIN (
+  SELECT dl.material_id,
+         COALESCE(MAX(d.sent_at), '0001-01-01 00:00:00+00'::timestamptz)::timestamptz AS last_delivery
+  FROM delivery_lines dl
+  JOIN deliveries d ON d.id = dl.delivery_id
+  WHERE (d.receiver_type = 'project' AND d.receiver_id = $1::uuid)
+     OR (d.sender_type = 'project' AND d.sender_id = $1::uuid)
+  GROUP BY dl.material_id
+) ld ON ld.material_id = m.id
+WHERE s.project_id = $1::uuid
   AND ($2::text = '' OR m.name ILIKE '%' || $2::text || '%' OR m.category ILIKE '%' || $2::text || '%')
-ORDER BY m.name
-LIMIT $4 OFFSET $3
+  AND ($3::text = '' OR m.category = $3::text)
+ORDER BY
+  CASE WHEN $4::text = 'name' AND $5::text = 'asc' THEN m.name END ASC,
+  CASE WHEN $4::text = 'name' AND $5::text = 'desc' THEN m.name END DESC,
+  CASE WHEN $4::text = 'quantity' AND $5::text = 'asc' THEN s.quantity END ASC,
+  CASE WHEN $4::text = 'quantity' AND $5::text = 'desc' THEN s.quantity END DESC,
+  CASE WHEN $4::text = 'last_delivery' AND $5::text = 'asc' THEN ld.last_delivery END ASC,
+  CASE WHEN $4::text = 'last_delivery' AND $5::text = 'desc' THEN ld.last_delivery END DESC,
+  m.name ASC
+LIMIT $7 OFFSET $6
 `
 
 type ListProjectStockParams struct {
 	ProjectID  uuid.UUID
 	Query      string
+	Category   string
+	SortBy     string
+	SortDir    string
 	PageOffset int32
 	PageLimit  int32
 }
 
 type ListProjectStockRow struct {
-	MaterialID uuid.UUID
-	Name       string
-	Category   string
-	Unit       string
-	Quantity   float64
+	MaterialID   uuid.UUID
+	Name         string
+	Category     string
+	Unit         string
+	Quantity     float64
+	LastDelivery time.Time
 }
 
 func (q *Queries) ListProjectStock(ctx context.Context, arg ListProjectStockParams) ([]ListProjectStockRow, error) {
 	rows, err := q.db.Query(ctx, listProjectStock,
 		arg.ProjectID,
 		arg.Query,
+		arg.Category,
+		arg.SortBy,
+		arg.SortDir,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -157,6 +184,7 @@ func (q *Queries) ListProjectStock(ctx context.Context, arg ListProjectStockPara
 			&i.Category,
 			&i.Unit,
 			&i.Quantity,
+			&i.LastDelivery,
 		); err != nil {
 			return nil, err
 		}

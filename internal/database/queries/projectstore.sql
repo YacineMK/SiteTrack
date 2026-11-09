@@ -1,18 +1,36 @@
 -- name: ListProjectStock :many
-SELECT m.id AS material_id, m.name, m.category, m.unit, s.quantity
+SELECT m.id AS material_id, m.name, m.category, m.unit, s.quantity, ld.last_delivery
 FROM project_store_stock s
 JOIN materials m ON m.id = s.material_id
-WHERE s.project_id = $1
+LEFT JOIN (
+  SELECT dl.material_id,
+         COALESCE(MAX(d.sent_at), '0001-01-01 00:00:00+00'::timestamptz)::timestamptz AS last_delivery
+  FROM delivery_lines dl
+  JOIN deliveries d ON d.id = dl.delivery_id
+  WHERE (d.receiver_type = 'project' AND d.receiver_id = sqlc.arg(project_id)::uuid)
+     OR (d.sender_type = 'project' AND d.sender_id = sqlc.arg(project_id)::uuid)
+  GROUP BY dl.material_id
+) ld ON ld.material_id = m.id
+WHERE s.project_id = sqlc.arg(project_id)::uuid
   AND (sqlc.arg(query)::text = '' OR m.name ILIKE '%' || sqlc.arg(query)::text || '%' OR m.category ILIKE '%' || sqlc.arg(query)::text || '%')
-ORDER BY m.name
+  AND (sqlc.arg(category)::text = '' OR m.category = sqlc.arg(category)::text)
+ORDER BY
+  CASE WHEN sqlc.arg(sort_by)::text = 'name' AND sqlc.arg(sort_dir)::text = 'asc' THEN m.name END ASC,
+  CASE WHEN sqlc.arg(sort_by)::text = 'name' AND sqlc.arg(sort_dir)::text = 'desc' THEN m.name END DESC,
+  CASE WHEN sqlc.arg(sort_by)::text = 'quantity' AND sqlc.arg(sort_dir)::text = 'asc' THEN s.quantity END ASC,
+  CASE WHEN sqlc.arg(sort_by)::text = 'quantity' AND sqlc.arg(sort_dir)::text = 'desc' THEN s.quantity END DESC,
+  CASE WHEN sqlc.arg(sort_by)::text = 'last_delivery' AND sqlc.arg(sort_dir)::text = 'asc' THEN ld.last_delivery END ASC,
+  CASE WHEN sqlc.arg(sort_by)::text = 'last_delivery' AND sqlc.arg(sort_dir)::text = 'desc' THEN ld.last_delivery END DESC,
+  m.name ASC
 LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
 
 -- name: CountProjectStock :one
 SELECT COUNT(*)
 FROM project_store_stock s
 JOIN materials m ON m.id = s.material_id
-WHERE s.project_id = $1
-  AND (sqlc.arg(query)::text = '' OR m.name ILIKE '%' || sqlc.arg(query)::text || '%' OR m.category ILIKE '%' || sqlc.arg(query)::text || '%');
+WHERE s.project_id = sqlc.arg(project_id)::uuid
+  AND (sqlc.arg(query)::text = '' OR m.name ILIKE '%' || sqlc.arg(query)::text || '%' OR m.category ILIKE '%' || sqlc.arg(query)::text || '%')
+  AND (sqlc.arg(category)::text = '' OR m.category = sqlc.arg(category)::text);
 
 -- name: GetProjectStock :one
 SELECT m.id AS material_id, m.name, m.category, m.unit, s.quantity

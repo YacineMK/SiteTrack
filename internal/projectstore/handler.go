@@ -26,7 +26,8 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stock, err := h.svc.List(r.Context(), chi.URLParam(r, "project_display_id"), r.URL.Query().Get("q"), limit, offset)
+	query := r.URL.Query()
+	stock, err := h.svc.List(r.Context(), chi.URLParam(r, "project_display_id"), query.Get("q"), query.Get("category"), query.Get("sort_by"), query.Get("sort_dir"), limit, offset)
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return

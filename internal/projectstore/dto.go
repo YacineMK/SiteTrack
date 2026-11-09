@@ -1,13 +1,18 @@
 package projectstore
 
-import "github.com/google/uuid"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type ProjectStockResponse struct {
-	MaterialID uuid.UUID `json:"material_id"`
-	Name       string    `json:"name"`
-	Category   string    `json:"category"`
-	Unit       string    `json:"unit"`
-	Quantity   float64   `json:"quantity"`
+	MaterialID   uuid.UUID  `json:"material_id"`
+	Name         string     `json:"name"`
+	Category     string     `json:"category"`
+	Unit         string     `json:"unit"`
+	Quantity     float64    `json:"quantity"`
+	LastDelivery *time.Time `json:"last_delivery_at"`
 }
 
 type ListProjectStockResponse struct {
