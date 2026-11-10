@@ -109,7 +109,7 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (Session, error) 
 		return Session{}, ErrInvalidCredentials
 	}
 
-	pair, err := s.jwt.GeneratePair(user.ID.String(), user.AppRole, user.TokenVersion)
+	pair, err := s.jwt.GeneratePair(user.ID.String(), user.AppRole)
 	if err != nil {
 		return Session{}, err
 	}
@@ -132,7 +132,7 @@ func (s *service) Refresh(ctx context.Context, refreshToken string) (Session, er
 		return Session{}, err
 	}
 
-	pair, err := s.jwt.GeneratePair(user.ID.String(), user.AppRole, user.TokenVersion)
+	pair, err := s.jwt.GeneratePair(user.ID.String(), user.AppRole)
 	if err != nil {
 		return Session{}, err
 	}
@@ -246,9 +246,5 @@ func (s *service) sessionUser(ctx context.Context, claims *kitjwt.Claims) (User,
 		}
 		return User{}, err
 	}
-	if user.TokenVersion != claims.TokenVersion {
-		return User{}, ErrUnauthorized
-	}
-
 	return user, nil
 }

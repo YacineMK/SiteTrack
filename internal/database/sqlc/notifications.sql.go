@@ -102,42 +102,6 @@ func (q *Queries) GetNotification(ctx context.Context, id uuid.UUID) (Notificati
 	return i, err
 }
 
-const listInvitationNotifications = `-- name: ListInvitationNotifications :many
-SELECT id, user_id, type, title, body, data, read_at, created_at
-FROM notifications
-WHERE user_id = $1 AND type = 'app_invite' AND read_at IS NULL
-ORDER BY created_at DESC
-`
-
-func (q *Queries) ListInvitationNotifications(ctx context.Context, userID uuid.UUID) ([]Notification, error) {
-	rows, err := q.db.Query(ctx, listInvitationNotifications, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Notification{}
-	for rows.Next() {
-		var i Notification
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.Type,
-			&i.Title,
-			&i.Body,
-			&i.Data,
-			&i.ReadAt,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listNotifications = `-- name: ListNotifications :many
 SELECT id, user_id, type, title, body, data, read_at, created_at
 FROM notifications

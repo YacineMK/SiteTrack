@@ -44,7 +44,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
-	limit, ok := h.limit(w, r)
+	limit, offset, ok := h.pagination(w, r)
 	if !ok {
 		return
 	}
@@ -55,30 +55,14 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	role, _ := middleware.AppRole(r.Context())
+	q := r.URL.Query()
 
-	projects, err := h.svc.List(r.Context(), userID, role == "super_admin", r.URL.Query().Get("late") == "true", r.URL.Query().Get("sort_by"), r.URL.Query().Get("sort_dir"), limit, r.URL.Query().Get("after"))
-	if err != nil {
-		h.utils.WriteServiceError(w, err)
-		return
-	}
-
-	jsonutil.JSON(w, http.StatusOK, projects)
-}
-
-func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
-	limit, ok := h.limit(w, r)
-	if !ok {
-		return
-	}
-
-	userID, ok := middleware.UserID(r.Context())
-	if !ok {
-		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	role, _ := middleware.AppRole(r.Context())
-
-	projects, err := h.svc.Search(r.Context(), userID, role == "super_admin", r.URL.Query().Get("late") == "true", r.URL.Query().Get("q"), limit, r.URL.Query().Get("after"))
+	projects, err := h.svc.List(r.Context(), ListParams{
+		UserID: userID, SuperAdmin: role == "super_admin",
+		LateOnly: q.Get("late") == "true",
+		Query:    q.Get("q"), Sort: q.Get("sort"),
+		Limit: limit, Offset: offset,
+	})
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return
@@ -280,15 +264,24 @@ func (h *Handler) rejectInvitation(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *Handler) limit(w http.ResponseWriter, r *http.Request) (int32, bool) {
-	value := r.URL.Query().Get("limit")
-	if value == "" {
-		return 20, true
+func (h *Handler) pagination(w http.ResponseWriter, r *http.Request) (int32, int32, bool) {
+	q := r.URL.Query()
+	limit, offset := int64(20), int64(0)
+	if value := q.Get("limit"); value != "" {
+		parsed, err := strconv.ParseInt(value, 10, 32)
+		if err != nil {
+			jsonutil.Error(w, http.StatusBadRequest, "invalid limit")
+			return 0, 0, false
+		}
+		limit = parsed
 	}
-	parsed, err := strconv.ParseInt(value, 10, 32)
-	if err != nil {
-		jsonutil.Error(w, http.StatusBadRequest, "invalid limit")
-		return 0, false
+	if value := q.Get("offset"); value != "" {
+		parsed, err := strconv.ParseInt(value, 10, 32)
+		if err != nil {
+			jsonutil.Error(w, http.StatusBadRequest, "invalid offset")
+			return 0, 0, false
+		}
+		offset = parsed
 	}
-	return int32(parsed), true
+	return int32(limit), int32(offset), true
 }

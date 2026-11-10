@@ -12,27 +12,19 @@ import (
 )
 
 const countMaterials = `-- name: CountMaterials :one
-SELECT COUNT(*)
-FROM materials
-WHERE ($1::text = '' OR name ILIKE '%' || $1::text || '%' OR category ILIKE '%' || $1::text || '%')
-  AND ($2::text = '' OR category = $2::text)
+SELECT COUNT(*) FROM materials
+WHERE $1::text = '' OR name ILIKE '%' || $1 || '%'
 `
 
-type CountMaterialsParams struct {
-	Query    string
-	Category string
-}
-
-func (q *Queries) CountMaterials(ctx context.Context, arg CountMaterialsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countMaterials, arg.Query, arg.Category)
+func (q *Queries) CountMaterials(ctx context.Context, q_ string) (int64, error) {
+	row := q.db.QueryRow(ctx, countMaterials, q_)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
 }
 
 const createMaterial = `-- name: CreateMaterial :one
-INSERT INTO materials (id, name, category, unit)
-VALUES ($1, $2, $3, $4)
+INSERT INTO materials (id, name, category, unit) VALUES ($1, $2, $3, $4)
 RETURNING id, name, category, unit, created_at, updated_at
 `
 
@@ -75,9 +67,7 @@ func (q *Queries) DeleteMaterial(ctx context.Context, id uuid.UUID) (int64, erro
 }
 
 const getMaterial = `-- name: GetMaterial :one
-SELECT id, name, category, unit, created_at, updated_at
-FROM materials
-WHERE id = $1
+SELECT id, name, category, unit, created_at, updated_at FROM materials WHERE id = $1
 `
 
 func (q *Queries) GetMaterial(ctx context.Context, id uuid.UUID) (Material, error) {
@@ -97,26 +87,19 @@ func (q *Queries) GetMaterial(ctx context.Context, id uuid.UUID) (Material, erro
 const listMaterials = `-- name: ListMaterials :many
 SELECT id, name, category, unit, created_at, updated_at
 FROM materials
-WHERE ($1::text = '' OR name ILIKE '%' || $1::text || '%' OR category ILIKE '%' || $1::text || '%')
-  AND ($2::text = '' OR category = $2::text)
-ORDER BY name
-LIMIT $4 OFFSET $3
+WHERE $1::text = '' OR name ILIKE '%' || $1 || '%'
+ORDER BY name, id
+LIMIT $3 OFFSET $2
 `
 
 type ListMaterialsParams struct {
-	Query      string
-	Category   string
+	Q          string
 	PageOffset int32
 	PageLimit  int32
 }
 
 func (q *Queries) ListMaterials(ctx context.Context, arg ListMaterialsParams) ([]Material, error) {
-	rows, err := q.db.Query(ctx, listMaterials,
-		arg.Query,
-		arg.Category,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listMaterials, arg.Q, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -143,11 +126,7 @@ func (q *Queries) ListMaterials(ctx context.Context, arg ListMaterialsParams) ([
 }
 
 const updateMaterial = `-- name: UpdateMaterial :one
-UPDATE materials
-SET name = $2,
-    category = $3,
-    unit = $4,
-    updated_at = NOW()
+UPDATE materials SET name = $2, category = $3, unit = $4, updated_at = NOW()
 WHERE id = $1
 RETURNING id, name, category, unit, created_at, updated_at
 `

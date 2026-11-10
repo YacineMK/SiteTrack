@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/YacineMK/SiteTrack/internal/database/sqlc"
 )
@@ -44,14 +45,13 @@ type ListParams struct {
 	ProjectID   uuid.UUID
 	Query       string
 	Status      string
-	FromDate    string
-	ToDate      string
-	SortBy      string
-	SortDir     string
+	Sort        string
+	FromDate    *time.Time
+	ToDate      *time.Time
 	LateOnly    bool
 	BlockedOnly bool
-	After       string
 	Limit       int32
+	Offset      int32
 }
 
 type Repository interface {
@@ -108,30 +108,26 @@ func (r *PostgresRepository) Get(ctx context.Context, projectID uuid.UUID, displ
 
 func (r *PostgresRepository) List(ctx context.Context, params ListParams) ([]Task, int64, error) {
 	total, err := r.queries.CountTasks(ctx, sqlc.CountTasksParams{
-		ProjectID:   params.ProjectID,
-		Query:       params.Query,
-		Status:      params.Status,
-		FromDate:    params.FromDate,
-		ToDate:      params.ToDate,
-		LateOnly:    params.LateOnly,
-		BlockedOnly: params.BlockedOnly,
+		ProjectID: params.ProjectID,
+		Q:         params.Query,
+		Status:    params.Status,
+		FromDate:  toPgDate(params.FromDate),
+		ToDate:    toPgDate(params.ToDate),
+		LateOnly:  params.LateOnly, BlockedOnly: params.BlockedOnly,
 	})
 	if err != nil {
 		return nil, 0, err
 	}
 
 	rows, err := r.queries.ListTasks(ctx, sqlc.ListTasksParams{
-		ProjectID:   params.ProjectID,
-		Query:       params.Query,
-		Status:      params.Status,
-		FromDate:    params.FromDate,
-		ToDate:      params.ToDate,
-		LateOnly:    params.LateOnly,
-		BlockedOnly: params.BlockedOnly,
-		AfterID:     params.After,
-		SortBy:      params.SortBy,
-		SortDir:     params.SortDir,
-		PageLimit:   params.Limit,
+		ProjectID: params.ProjectID,
+		Q:         params.Query,
+		Status:    params.Status,
+		Sort:      params.Sort,
+		FromDate:  toPgDate(params.FromDate),
+		ToDate:    toPgDate(params.ToDate),
+		LateOnly:  params.LateOnly, BlockedOnly: params.BlockedOnly,
+		PageLimit: params.Limit, PageOffset: params.Offset,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -142,6 +138,13 @@ func (r *PostgresRepository) List(ctx context.Context, params ListParams) ([]Tas
 		tasks = append(tasks, toListTask(row))
 	}
 	return tasks, total, nil
+}
+
+func toPgDate(t *time.Time) pgtype.Date {
+	if t == nil {
+		return pgtype.Date{}
+	}
+	return pgtype.Date{Time: *t, Valid: true}
 }
 
 func (r *PostgresRepository) Update(ctx context.Context, projectID uuid.UUID, displayID, name string, start, end time.Time) (Task, error) {

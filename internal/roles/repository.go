@@ -24,7 +24,6 @@ type Role struct {
 	ID          uuid.UUID
 	Name        string
 	Description string
-	IsSystem    bool
 }
 
 type UserRole struct {
@@ -44,7 +43,7 @@ type Policy struct {
 
 type Repository interface {
 	CreateRole(ctx context.Context, name, description string) (Role, error)
-	ListRoles(ctx context.Context, query string) ([]Role, error)
+	ListRoles(ctx context.Context) ([]Role, error)
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
 	GetRoleByName(ctx context.Context, name string) (Role, error)
 	AddPolicy(ctx context.Context, roleID uuid.UUID, resource, action string) error
@@ -75,8 +74,8 @@ func (r *PostgresRepository) CreateRole(ctx context.Context, name, description s
 	return toRole(row), nil
 }
 
-func (r *PostgresRepository) ListRoles(ctx context.Context, query string) ([]Role, error) {
-	rows, err := r.queries.ListRoles(ctx, query)
+func (r *PostgresRepository) ListRoles(ctx context.Context) ([]Role, error) {
+	rows, err := r.queries.ListRoles(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -159,8 +158,8 @@ func (r *PostgresRepository) AssignRole(ctx context.Context, userID uuid.UUID, r
 	}
 
 	row, err := r.queries.AssignUserRole(ctx, sqlc.AssignUserRoleParams{
-		UserID:   userID,
-		RoleName: roleName,
+		UserID: userID,
+		Role:   roleName,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -177,6 +176,10 @@ func (r *PostgresRepository) AssignRole(ctx context.Context, userID uuid.UUID, r
 		CreatedAt: row.CreatedAt,
 		UpdatedAt: row.UpdatedAt,
 	}, nil
+}
+
+func (r *PostgresRepository) toRoleFromRow(row sqlc.AppRole) Role {
+	return Role{ID: row.ID, Name: row.Name, Description: row.Description}
 }
 
 func (r *PostgresRepository) HasPolicy(ctx context.Context, role, resource, action string) (bool, error) {
@@ -197,7 +200,6 @@ func toRole(row sqlc.AppRole) Role {
 		ID:          row.ID,
 		Name:        row.Name,
 		Description: row.Description,
-		IsSystem:    row.IsSystem,
 	}
 }
 

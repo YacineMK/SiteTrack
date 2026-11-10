@@ -13,7 +13,7 @@ var ErrInvalidInput = errors.New("invalid input")
 type Service interface {
 	Create(ctx context.Context, req CreateMaterialRequest) (MaterialResponse, error)
 	Get(ctx context.Context, id string) (MaterialResponse, error)
-	List(ctx context.Context, query, category string, limit, offset int32) (ListMaterialsResponse, error)
+	List(ctx context.Context, query string, limit, offset int32) (ListMaterialsResponse, error)
 	Update(ctx context.Context, id string, req UpdateMaterialRequest) (MaterialResponse, error)
 	Delete(ctx context.Context, id string) error
 }
@@ -67,10 +67,10 @@ func (s *service) Get(ctx context.Context, id string) (MaterialResponse, error) 
 	return s.utils.ToResponse(material), nil
 }
 
-func (s *service) List(ctx context.Context, query, category string, limit, offset int32) (ListMaterialsResponse, error) {
+func (s *service) List(ctx context.Context, query string, limit, offset int32) (ListMaterialsResponse, error) {
 	limit, offset = s.utils.NormalizePagination(limit, offset)
 
-	materials, total, err := s.repo.List(ctx, strings.TrimSpace(query), strings.TrimSpace(category), limit, offset)
+	materials, total, err := s.repo.List(ctx, strings.TrimSpace(query), limit, offset)
 	if err != nil {
 		return ListMaterialsResponse{}, err
 	}

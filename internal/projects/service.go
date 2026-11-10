@@ -19,8 +19,7 @@ var ErrInvalidInput = errors.New("invalid input")
 type Service interface {
 	Create(ctx context.Context, userID uuid.UUID, req CreateProjectRequest) (ProjectResponse, error)
 	Get(ctx context.Context, displayID string, isAdmin bool) (ProjectResponse, error)
-	List(ctx context.Context, userID uuid.UUID, superAdmin, lateOnly bool, sortBy, sortDir string, limit int32, after string) (ListProjectsResponse, error)
-	Search(ctx context.Context, userID uuid.UUID, superAdmin, lateOnly bool, query string, limit int32, after string) (ListProjectsResponse, error)
+	List(ctx context.Context, p ListParams) (ListProjectsResponse, error)
 	Update(ctx context.Context, displayID string, isAdmin bool, req UpdateProjectRequest) (ProjectResponse, error)
 	Delete(ctx context.Context, displayID string) error
 	ListMembers(ctx context.Context, projectID uuid.UUID) (ListMembersResponse, error)
@@ -93,50 +92,24 @@ func (s *service) Get(ctx context.Context, displayID string, isAdmin bool) (Proj
 	return s.utils.ToResponse(project), nil
 }
 
-func (s *service) List(ctx context.Context, userID uuid.UUID, superAdmin, lateOnly bool, sortBy, sortDir string, limit int32, after string) (ListProjectsResponse, error) {
-	switch sortBy {
-	case "", "created", "name", "start_date", "progress", "late":
+func (s *service) List(ctx context.Context, p ListParams) (ListProjectsResponse, error) {
+	switch p.Sort {
+	case "", "name", "start_date", "progress", "late":
 	default:
 		return ListProjectsResponse{}, ErrInvalidInput
 	}
-	switch sortDir {
-	case "", "asc", "desc":
-	default:
-		return ListProjectsResponse{}, ErrInvalidInput
+	p.Query = strings.TrimSpace(p.Query)
+	p.Limit = s.utils.NormalizeLimit(p.Limit)
+	if p.Offset < 0 {
+		p.Offset = 0
 	}
-	if sortBy == "" {
-		sortBy = "created"
-	}
-	if sortDir == "" {
-		if sortBy == "created" {
-			sortDir = "desc"
-		} else {
-			sortDir = "asc"
-		}
-	}
-	limit = s.utils.NormalizeLimit(limit)
 
-	items, total, err := s.repo.List(ctx, userID, superAdmin, lateOnly, sortBy, sortDir, limit, after)
+	items, total, err := s.repo.List(ctx, p)
 	if err != nil {
 		return ListProjectsResponse{}, err
 	}
 
-	return s.utils.ListResponse(items, total, limit), nil
-}
-
-func (s *service) Search(ctx context.Context, userID uuid.UUID, superAdmin, lateOnly bool, query string, limit int32, after string) (ListProjectsResponse, error) {
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return ListProjectsResponse{}, ErrInvalidInput
-	}
-	limit = s.utils.NormalizeLimit(limit)
-
-	items, total, err := s.repo.Search(ctx, userID, superAdmin, lateOnly, query, limit, after)
-	if err != nil {
-		return ListProjectsResponse{}, err
-	}
-
-	return s.utils.ListResponse(items, total, limit), nil
+	return s.utils.ListResponse(items, total, p.Limit), nil
 }
 
 func (s *service) Update(ctx context.Context, displayID string, isAdmin bool, req UpdateProjectRequest) (ProjectResponse, error) {

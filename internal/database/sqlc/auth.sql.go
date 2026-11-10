@@ -13,9 +13,14 @@ import (
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (id, name, email, password_hash, app_role, role_id)
-VALUES ($1, $2, $3, $4, $5, (SELECT id FROM app_roles WHERE name = $5))
-RETURNING id, name, email, password_hash, app_role, token_version, created_at, updated_at
+WITH new_user AS (
+    INSERT INTO users (id, name, email, password_hash, role_id)
+    VALUES ($1, $2, $3, $4, (SELECT app_roles.id FROM app_roles WHERE app_roles.name = $5))
+    RETURNING id, name, email, password_hash, role_id, created_at, updated_at
+)
+SELECT u.id, u.name, u.email, u.password_hash, ar.name AS app_role, u.created_at, u.updated_at
+FROM new_user u
+JOIN app_roles ar ON ar.id = u.role_id
 `
 
 type CreateUserParams struct {
@@ -23,7 +28,7 @@ type CreateUserParams struct {
 	Name         string
 	Email        string
 	PasswordHash string
-	AppRole      string
+	Role         string
 }
 
 type CreateUserRow struct {
@@ -32,7 +37,6 @@ type CreateUserRow struct {
 	Email        string
 	PasswordHash string
 	AppRole      string
-	TokenVersion int32
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -43,7 +47,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 		arg.Name,
 		arg.Email,
 		arg.PasswordHash,
-		arg.AppRole,
+		arg.Role,
 	)
 	var i CreateUserRow
 	err := row.Scan(
@@ -52,7 +56,6 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 		&i.Email,
 		&i.PasswordHash,
 		&i.AppRole,
-		&i.TokenVersion,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -71,7 +74,7 @@ func (q *Queries) EmailExists(ctx context.Context, email string) (bool, error) {
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT u.id, u.name, u.email, u.password_hash, ar.name AS app_role, u.token_version, u.created_at, u.updated_at
+SELECT u.id, u.name, u.email, u.password_hash, ar.name AS app_role, u.created_at, u.updated_at
 FROM users u
 JOIN app_roles ar ON ar.id = u.role_id
 WHERE u.email = $1
@@ -83,7 +86,6 @@ type GetUserByEmailRow struct {
 	Email        string
 	PasswordHash string
 	AppRole      string
-	TokenVersion int32
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -97,7 +99,6 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 		&i.Email,
 		&i.PasswordHash,
 		&i.AppRole,
-		&i.TokenVersion,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -105,7 +106,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT u.id, u.name, u.email, u.password_hash, ar.name AS app_role, u.token_version, u.created_at, u.updated_at
+SELECT u.id, u.name, u.email, u.password_hash, ar.name AS app_role, u.created_at, u.updated_at
 FROM users u
 JOIN app_roles ar ON ar.id = u.role_id
 WHERE u.id = $1
@@ -117,7 +118,6 @@ type GetUserByIDRow struct {
 	Email        string
 	PasswordHash string
 	AppRole      string
-	TokenVersion int32
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -131,7 +131,6 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow
 		&i.Email,
 		&i.PasswordHash,
 		&i.AppRole,
-		&i.TokenVersion,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

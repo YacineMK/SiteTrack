@@ -11,7 +11,7 @@ import (
 func TestGeneratePairAndParse(t *testing.T) {
 	manager := New("test-secret", 15*time.Minute, 24*time.Hour)
 
-	pair, err := manager.GeneratePair("user-1", "admin", 3)
+	pair, err := manager.GeneratePair("user-1", "admin")
 	if err != nil {
 		t.Fatalf("GeneratePair() error = %v", err)
 	}
@@ -26,7 +26,7 @@ func TestGeneratePairAndParse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseAccess() error = %v", err)
 	}
-	if access.UserID != "user-1" || access.AppRole != "admin" || access.TokenVersion != 3 {
+	if access.UserID != "user-1" || access.AppRole != "admin" {
 		t.Fatalf("unexpected access claims: %+v", access)
 	}
 	if access.TokenType != AccessToken {
@@ -43,7 +43,7 @@ func TestGeneratePairAndParse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseRefresh() error = %v", err)
 	}
-	if refresh.UserID != "user-1" || refresh.AppRole != "admin" || refresh.TokenVersion != 3 {
+	if refresh.UserID != "user-1" || refresh.AppRole != "admin" {
 		t.Fatalf("unexpected refresh claims: %+v", refresh)
 	}
 	if refresh.TokenType != RefreshToken {
@@ -63,7 +63,7 @@ func TestGeneratePairAndParse(t *testing.T) {
 func TestParseRejectsWrongTokenType(t *testing.T) {
 	manager := New("test-secret", 15*time.Minute, 24*time.Hour)
 
-	pair, err := manager.GeneratePair("user-1", "user", 1)
+	pair, err := manager.GeneratePair("user-1", "user")
 	if err != nil {
 		t.Fatalf("GeneratePair() error = %v", err)
 	}
@@ -80,7 +80,7 @@ func TestParseRejectsWrongSecret(t *testing.T) {
 	issuer := New("secret-one", 15*time.Minute, 24*time.Hour)
 	verifier := New("secret-two", 15*time.Minute, 24*time.Hour)
 
-	pair, err := issuer.GeneratePair("user-1", "user", 1)
+	pair, err := issuer.GeneratePair("user-1", "user")
 	if err != nil {
 		t.Fatalf("GeneratePair() error = %v", err)
 	}
@@ -92,7 +92,7 @@ func TestParseRejectsWrongSecret(t *testing.T) {
 
 func TestParseRejectsExpiredTokens(t *testing.T) {
 	expiredAccess := New("test-secret", -time.Minute, 24*time.Hour)
-	pair, err := expiredAccess.GeneratePair("user-1", "user", 1)
+	pair, err := expiredAccess.GeneratePair("user-1", "user")
 	if err != nil {
 		t.Fatalf("GeneratePair() error = %v", err)
 	}
@@ -101,7 +101,7 @@ func TestParseRejectsExpiredTokens(t *testing.T) {
 	}
 
 	expiredRefresh := New("test-secret", 15*time.Minute, -time.Minute)
-	pair, err = expiredRefresh.GeneratePair("user-1", "user", 1)
+	pair, err = expiredRefresh.GeneratePair("user-1", "user")
 	if err != nil {
 		t.Fatalf("GeneratePair() error = %v", err)
 	}
@@ -113,10 +113,9 @@ func TestParseRejectsExpiredTokens(t *testing.T) {
 func TestParseRejectsTokenWithoutExpiration(t *testing.T) {
 	manager := New("test-secret", 15*time.Minute, 24*time.Hour)
 	claims := Claims{
-		UserID:       "user-1",
-		AppRole:      "user",
-		TokenVersion: 1,
-		TokenType:    AccessToken,
+		UserID:    "user-1",
+		AppRole:   "user",
+		TokenType: AccessToken,
 		RegisteredClaims: jwtlib.RegisteredClaims{
 			ID: "some-jti",
 		},

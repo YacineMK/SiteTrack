@@ -12,11 +12,9 @@ import (
 )
 
 const addCompanyStock = `-- name: AddCompanyStock :one
-INSERT INTO company_store_stock (material_id, quantity)
-VALUES ($1, $2)
+INSERT INTO company_store_stock (material_id, quantity) VALUES ($1, $2)
 ON CONFLICT (material_id) DO UPDATE
-SET quantity = company_store_stock.quantity + EXCLUDED.quantity,
-    updated_at = NOW()
+SET quantity = company_store_stock.quantity + EXCLUDED.quantity, updated_at = NOW()
 RETURNING material_id, quantity, reorder_point, updated_at
 `
 
@@ -38,22 +36,37 @@ func (q *Queries) AddCompanyStock(ctx context.Context, arg AddCompanyStockParams
 }
 
 const countCompanyStock = `-- name: CountCompanyStock :one
-SELECT COUNT(*)
-FROM materials m
-WHERE ($1::text = '' OR m.name ILIKE '%' || $1::text || '%' OR m.category ILIKE '%' || $1::text || '%')
+WITH stock AS (
+    SELECT m.name, m.category,
+           CASE
+               WHEN COALESCE(s.quantity, 0) = 0                      THEN 'out_of_stock'
+               WHEN COALESCE(s.quantity, 0) <= COALESCE(s.reorder_point, 0) THEN 'low'
+               ELSE 'available'
+           END AS status
+    FROM materials m
+    LEFT JOIN company_store_stock s ON s.material_id = m.id
+)
+SELECT COUNT(*) FROM stock
+WHERE ($1::text        = '' OR name ILIKE '%' || $1 || '%')
+  AND ($2::text = '' OR category = $2)
+  AND ($3::text   = '' OR status   = $3)
 `
 
-func (q *Queries) CountCompanyStock(ctx context.Context, query string) (int64, error) {
-	row := q.db.QueryRow(ctx, countCompanyStock, query)
+type CountCompanyStockParams struct {
+	Q        string
+	Category string
+	Status   string
+}
+
+func (q *Queries) CountCompanyStock(ctx context.Context, arg CountCompanyStockParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countCompanyStock, arg.Q, arg.Category, arg.Status)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
 }
 
 const deductCompanyStock = `-- name: DeductCompanyStock :execrows
-UPDATE company_store_stock
-SET quantity = quantity - $2,
-    updated_at = NOW()
+UPDATE company_store_stock SET quantity = quantity - $2, updated_at = NOW()
 WHERE material_id = $1 AND quantity >= $2
 `
 
@@ -72,12 +85,17 @@ func (q *Queries) DeductCompanyStock(ctx context.Context, arg DeductCompanyStock
 
 const getCompanyStock = `-- name: GetCompanyStock :one
 SELECT m.id AS material_id, m.name, m.category, m.unit,
-       COALESCE(s.quantity, 0)::numeric AS quantity,
+       COALESCE(s.quantity,      0)::numeric AS quantity,
        COALESCE(s.reorder_point, 0)::numeric AS reorder_point,
-       COALESCE((SELECT SUM(dl.quantity)
-                 FROM delivery_lines dl
+       CASE
+           WHEN COALESCE(s.quantity, 0) = 0                      THEN 'out_of_stock'
+           WHEN COALESCE(s.quantity, 0) <= COALESCE(s.reorder_point, 0) THEN 'low'
+           ELSE 'available'
+       END AS status,
+       COALESCE((SELECT SUM(dl.quantity) FROM delivery_lines dl
                  JOIN deliveries d ON d.id = dl.delivery_id
-                 WHERE dl.material_id = m.id AND d.sender_type = 'company' AND d.status = 'in_transit'), 0)::numeric AS in_transit
+                 WHERE dl.material_id = m.id
+                   AND d.sender_type = 'company' AND d.status = 'in_transit'), 0)::numeric AS in_transit
 FROM materials m
 LEFT JOIN company_store_stock s ON s.material_id = m.id
 WHERE m.id = $1
@@ -90,6 +108,7 @@ type GetCompanyStockRow struct {
 	Unit         string
 	Quantity     float64
 	ReorderPoint float64
+	Status       string
 	InTransit    float64
 }
 
@@ -103,28 +122,48 @@ func (q *Queries) GetCompanyStock(ctx context.Context, id uuid.UUID) (GetCompany
 		&i.Unit,
 		&i.Quantity,
 		&i.ReorderPoint,
+		&i.Status,
 		&i.InTransit,
 	)
 	return i, err
 }
 
 const listCompanyStock = `-- name: ListCompanyStock :many
-SELECT m.id AS material_id, m.name, m.category, m.unit,
-       COALESCE(s.quantity, 0)::numeric AS quantity,
-       COALESCE(s.reorder_point, 0)::numeric AS reorder_point,
-       COALESCE((SELECT SUM(dl.quantity)
-                 FROM delivery_lines dl
-                 JOIN deliveries d ON d.id = dl.delivery_id
-                 WHERE dl.material_id = m.id AND d.sender_type = 'company' AND d.status = 'in_transit'), 0)::numeric AS in_transit
-FROM materials m
-LEFT JOIN company_store_stock s ON s.material_id = m.id
-WHERE ($1::text = '' OR m.name ILIKE '%' || $1::text || '%' OR m.category ILIKE '%' || $1::text || '%')
-ORDER BY m.name
-LIMIT $3 OFFSET $2
+WITH stock AS (
+    SELECT m.id AS material_id, m.name, m.category, m.unit,
+           COALESCE(s.quantity,      0)::numeric AS quantity,
+           COALESCE(s.reorder_point, 0)::numeric AS reorder_point,
+           CASE
+               WHEN COALESCE(s.quantity, 0) = 0                      THEN 'out_of_stock'
+               WHEN COALESCE(s.quantity, 0) <= COALESCE(s.reorder_point, 0) THEN 'low'
+               ELSE 'available'
+           END AS status,
+           COALESCE((SELECT SUM(dl.quantity) FROM delivery_lines dl
+                     JOIN deliveries d ON d.id = dl.delivery_id
+                     WHERE dl.material_id = m.id
+                       AND d.sender_type = 'company' AND d.status = 'in_transit'), 0)::numeric AS in_transit
+    FROM materials m
+    LEFT JOIN company_store_stock s ON s.material_id = m.id
+)
+SELECT material_id, name, category, unit, quantity, reorder_point, status, in_transit
+FROM stock
+WHERE ($1::text        = '' OR name ILIKE '%' || $1        || '%')
+  AND ($2::text = '' OR category = $2)
+  AND ($3::text   = '' OR status   = $3)
+ORDER BY
+    CASE $4::text WHEN 'quantity' THEN quantity END ASC,
+    CASE $4::text WHEN 'status'   THEN
+        CASE status WHEN 'out_of_stock' THEN 0 WHEN 'low' THEN 1 ELSE 2 END
+    END ASC,
+    name ASC
+LIMIT $6 OFFSET $5
 `
 
 type ListCompanyStockParams struct {
-	Query      string
+	Q          string
+	Category   string
+	Status     string
+	Sort       string
 	PageOffset int32
 	PageLimit  int32
 }
@@ -136,11 +175,19 @@ type ListCompanyStockRow struct {
 	Unit         string
 	Quantity     float64
 	ReorderPoint float64
+	Status       string
 	InTransit    float64
 }
 
 func (q *Queries) ListCompanyStock(ctx context.Context, arg ListCompanyStockParams) ([]ListCompanyStockRow, error) {
-	rows, err := q.db.Query(ctx, listCompanyStock, arg.Query, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listCompanyStock,
+		arg.Q,
+		arg.Category,
+		arg.Status,
+		arg.Sort,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -155,6 +202,7 @@ func (q *Queries) ListCompanyStock(ctx context.Context, arg ListCompanyStockPara
 			&i.Unit,
 			&i.Quantity,
 			&i.ReorderPoint,
+			&i.Status,
 			&i.InTransit,
 		); err != nil {
 			return nil, err
@@ -168,11 +216,9 @@ func (q *Queries) ListCompanyStock(ctx context.Context, arg ListCompanyStockPara
 }
 
 const setCompanyReorderPoint = `-- name: SetCompanyReorderPoint :one
-INSERT INTO company_store_stock (material_id, quantity, reorder_point)
-VALUES ($1, 0, $2)
+INSERT INTO company_store_stock (material_id, reorder_point) VALUES ($1, $2)
 ON CONFLICT (material_id) DO UPDATE
-SET reorder_point = EXCLUDED.reorder_point,
-    updated_at = NOW()
+SET reorder_point = EXCLUDED.reorder_point, updated_at = NOW()
 RETURNING material_id, quantity, reorder_point, updated_at
 `
 

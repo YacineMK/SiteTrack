@@ -23,7 +23,6 @@ func (utils) ToRoleResponse(role Role) RoleResponse {
 		ID:          role.ID.String(),
 		Name:        role.Name,
 		Description: role.Description,
-		IsSystem:    role.IsSystem,
 	}
 }
 

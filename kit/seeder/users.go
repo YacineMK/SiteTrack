@@ -9,8 +9,8 @@ import (
 )
 
 const seedUsersSQL = `
-INSERT INTO users (id, name, email, password_hash, app_role, role_id)
-SELECT gen_random_uuid(), 'Seed User ' || g, 'seed.user' || g || '@example.com', $1, 'user',
+INSERT INTO users (id, name, email, password_hash, role_id)
+SELECT gen_random_uuid(), 'Seed User ' || g, 'seed.user' || g || '@example.com', $1,
        (SELECT id FROM app_roles WHERE name = 'user')
 FROM generate_series(1, $2) g
 ON CONFLICT (email) DO NOTHING`

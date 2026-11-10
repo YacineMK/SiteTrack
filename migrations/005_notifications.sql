@@ -11,7 +11,7 @@ CREATE TABLE notifications (
 );
 
 CREATE INDEX notifications_user_created_idx ON notifications (user_id, created_at DESC);
-CREATE INDEX notifications_unread_idx ON notifications (user_id) WHERE read_at IS NULL;
+CREATE INDEX notifications_unread_idx       ON notifications (user_id) WHERE read_at IS NULL;
 
 CREATE TABLE outbox (
     id              UUID PRIMARY KEY,
