@@ -9,7 +9,7 @@ import (
 var ErrInvalidInput = errors.New("invalid input")
 
 type Service interface {
-	List(ctx context.Context, query string, limit, offset int32) (ListStockResponse, error)
+	List(ctx context.Context, p ListParams) (ListStockResponse, error)
 	Get(ctx context.Context, materialID string) (StockResponse, error)
 	Add(ctx context.Context, req AddStockRequest) (StockResponse, error)
 	SetReorderPoint(ctx context.Context, materialID string, req SetReorderPointRequest) (StockResponse, error)
@@ -24,15 +24,27 @@ func NewService(repo Repository) Service {
 	return &service{repo: repo, utils: NewUtils()}
 }
 
-func (s *service) List(ctx context.Context, query string, limit, offset int32) (ListStockResponse, error) {
-	limit, offset = s.utils.NormalizePagination(limit, offset)
+func (s *service) List(ctx context.Context, p ListParams) (ListStockResponse, error) {
+	switch p.Sort {
+	case "", "name", "quantity", "status":
+	default:
+		return ListStockResponse{}, ErrInvalidInput
+	}
+	switch p.Status {
+	case "", "out_of_stock", "low", "available":
+	default:
+		return ListStockResponse{}, ErrInvalidInput
+	}
+	p.Query = strings.TrimSpace(p.Query)
+	p.Category = strings.TrimSpace(p.Category)
+	p.Limit, p.Offset = s.utils.NormalizePagination(p.Limit, p.Offset)
 
-	stock, total, err := s.repo.List(ctx, strings.TrimSpace(query), limit, offset)
+	stock, total, err := s.repo.List(ctx, p)
 	if err != nil {
 		return ListStockResponse{}, err
 	}
 
-	return s.utils.ListResponse(stock, total, limit, offset), nil
+	return s.utils.ListResponse(stock, total, p.Limit, p.Offset), nil
 }
 
 func (s *service) Get(ctx context.Context, materialID string) (StockResponse, error) {

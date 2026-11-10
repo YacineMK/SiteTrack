@@ -73,7 +73,7 @@ func (h *Handler) listCompany(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := r.URL.Query()
-	deliveries, err := h.svc.ListCompany(r.Context(), query.Get("status"), query.Get("q"), query.Get("direction"), query.Get("from_date"), query.Get("to_date"), query.Get("project"), limit, query.Get("after"))
+	deliveries, err := h.svc.ListCompany(r.Context(), query.Get("status"), query.Get("direction"), query.Get("from_date"), query.Get("to_date"), query.Get("project"), query.Get("after"), limit)
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return
@@ -89,7 +89,7 @@ func (h *Handler) listProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := r.URL.Query()
-	deliveries, err := h.svc.ListProject(r.Context(), chi.URLParam(r, "project_display_id"), query.Get("status"), query.Get("q"), query.Get("direction"), query.Get("from_date"), query.Get("to_date"), limit, query.Get("after"))
+	deliveries, err := h.svc.ListProject(r.Context(), chi.URLParam(r, "project_display_id"), query.Get("status"), query.Get("direction"), query.Get("from_date"), query.Get("to_date"), query.Get("after"), limit)
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return

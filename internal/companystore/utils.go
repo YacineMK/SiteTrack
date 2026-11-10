@@ -24,10 +24,6 @@ func NewUtils() Utils {
 }
 
 func (utils) ToResponse(stock Stock) StockResponse {
-	status := "ok"
-	if stock.Quantity <= stock.ReorderPoint {
-		status = "low"
-	}
 	return StockResponse{
 		MaterialID:   stock.MaterialID,
 		Name:         stock.Name,
@@ -36,7 +32,7 @@ func (utils) ToResponse(stock Stock) StockResponse {
 		Quantity:     stock.Quantity,
 		ReorderPoint: stock.ReorderPoint,
 		InTransit:    stock.InTransit,
-		Status:       status,
+		Status:       stock.Status,
 	}
 }
 

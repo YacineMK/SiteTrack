@@ -30,7 +30,7 @@ type Material struct {
 type Repository interface {
 	Create(ctx context.Context, material Material) (Material, error)
 	Get(ctx context.Context, id uuid.UUID) (Material, error)
-	List(ctx context.Context, query, category string, limit, offset int32) ([]Material, int64, error)
+	List(ctx context.Context, query string, limit, offset int32) ([]Material, int64, error)
 	Update(ctx context.Context, id uuid.UUID, name, category, unit string) (Material, error)
 	Delete(ctx context.Context, id uuid.UUID) (int64, error)
 }
@@ -67,18 +67,14 @@ func (r *PostgresRepository) Get(ctx context.Context, id uuid.UUID) (Material, e
 	return toMaterial(row), nil
 }
 
-func (r *PostgresRepository) List(ctx context.Context, query, category string, limit, offset int32) ([]Material, int64, error) {
-	total, err := r.queries.CountMaterials(ctx, sqlc.CountMaterialsParams{
-		Query:    query,
-		Category: category,
-	})
+func (r *PostgresRepository) List(ctx context.Context, query string, limit, offset int32) ([]Material, int64, error) {
+	total, err := r.queries.CountMaterials(ctx, query)
 	if err != nil {
 		return nil, 0, err
 	}
 
 	rows, err := r.queries.ListMaterials(ctx, sqlc.ListMaterialsParams{
-		Query:      query,
-		Category:   category,
+		Q:          query,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})

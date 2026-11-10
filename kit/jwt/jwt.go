@@ -19,10 +19,9 @@ const (
 )
 
 type Claims struct {
-	UserID       string    `json:"user_id"`
-	AppRole      string    `json:"app_role"`
-	TokenVersion int32     `json:"token_version"`
-	TokenType    TokenType `json:"token_type"`
+	UserID    string    `json:"user_id"`
+	AppRole   string    `json:"app_role"`
+	TokenType TokenType `json:"token_type"`
 	jwtlib.RegisteredClaims
 }
 
@@ -47,12 +46,12 @@ func New(secret string, accessTTL, refreshTTL time.Duration) *Manager {
 	}
 }
 
-func (m *Manager) GeneratePair(userID, appRole string, tokenVersion int32) (Pair, error) {
-	accessToken, accessExpiresAt, err := m.generate(userID, appRole, tokenVersion, AccessToken, m.accessTTL)
+func (m *Manager) GeneratePair(userID, appRole string) (Pair, error) {
+	accessToken, accessExpiresAt, err := m.generate(userID, appRole, AccessToken, m.accessTTL)
 	if err != nil {
 		return Pair{}, err
 	}
-	refreshToken, refreshExpiresAt, err := m.generate(userID, appRole, tokenVersion, RefreshToken, m.refreshTTL)
+	refreshToken, refreshExpiresAt, err := m.generate(userID, appRole, RefreshToken, m.refreshTTL)
 	if err != nil {
 		return Pair{}, err
 	}
@@ -72,7 +71,7 @@ func (m *Manager) ParseRefresh(tokenString string) (*Claims, error) {
 	return m.parse(tokenString, RefreshToken)
 }
 
-func (m *Manager) generate(userID, appRole string, tokenVersion int32, tokenType TokenType, ttl time.Duration) (string, time.Time, error) {
+func (m *Manager) generate(userID, appRole string, tokenType TokenType, ttl time.Duration) (string, time.Time, error) {
 	jti, err := uuid.NewV7()
 	if err != nil {
 		return "", time.Time{}, err
@@ -80,10 +79,9 @@ func (m *Manager) generate(userID, appRole string, tokenVersion int32, tokenType
 	now := time.Now()
 	expiresAt := now.Add(ttl)
 	claims := Claims{
-		UserID:       userID,
-		AppRole:      appRole,
-		TokenVersion: tokenVersion,
-		TokenType:    tokenType,
+		UserID:    userID,
+		AppRole:   appRole,
+		TokenType: tokenType,
 		RegisteredClaims: jwtlib.RegisteredClaims{
 			ID:        jti.String(),
 			IssuedAt:  jwtlib.NewNumericDate(now),

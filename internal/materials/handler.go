@@ -41,7 +41,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := r.URL.Query()
-	materials, err := h.svc.List(r.Context(), query.Get("q"), query.Get("category"), limit, offset)
+	materials, err := h.svc.List(r.Context(), query.Get("q"), limit, offset)
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return

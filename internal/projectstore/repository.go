@@ -22,8 +22,17 @@ type Stock struct {
 	LastDelivery *time.Time
 }
 
+type ListParams struct {
+	ProjectID uuid.UUID
+	Query     string
+	Category  string
+	Sort      string
+	Limit     int32
+	Offset    int32
+}
+
 type Repository interface {
-	List(ctx context.Context, projectID uuid.UUID, query, category, sortBy, sortDir string, limit, offset int32) ([]Stock, int64, error)
+	List(ctx context.Context, p ListParams) ([]Stock, int64, error)
 	Get(ctx context.Context, projectID, materialID uuid.UUID) (Stock, error)
 }
 
@@ -35,24 +44,17 @@ func NewPostgresRepository(db sqlc.DBTX) *PostgresRepository {
 	return &PostgresRepository{queries: sqlc.New(db)}
 }
 
-func (r *PostgresRepository) List(ctx context.Context, projectID uuid.UUID, query, category, sortBy, sortDir string, limit, offset int32) ([]Stock, int64, error) {
+func (r *PostgresRepository) List(ctx context.Context, p ListParams) ([]Stock, int64, error) {
 	total, err := r.queries.CountProjectStock(ctx, sqlc.CountProjectStockParams{
-		ProjectID: projectID,
-		Query:     query,
-		Category:  category,
+		ProjectID: p.ProjectID, Q: p.Query, Category: p.Category,
 	})
 	if err != nil {
 		return nil, 0, err
 	}
 
 	rows, err := r.queries.ListProjectStock(ctx, sqlc.ListProjectStockParams{
-		ProjectID:  projectID,
-		Query:      query,
-		Category:   category,
-		SortBy:     sortBy,
-		SortDir:    sortDir,
-		PageLimit:  limit,
-		PageOffset: offset,
+		ProjectID: p.ProjectID, Q: p.Query, Category: p.Category, Sort: p.Sort,
+		PageLimit: p.Limit, PageOffset: p.Offset,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -62,10 +64,8 @@ func (r *PostgresRepository) List(ctx context.Context, projectID uuid.UUID, quer
 	for _, row := range rows {
 		item := Stock{
 			MaterialID: row.MaterialID,
-			Name:       row.Name,
-			Category:   row.Category,
-			Unit:       row.Unit,
-			Quantity:   row.Quantity,
+			Name:       row.Name, Category: row.Category, Unit: row.Unit,
+			Quantity: row.Quantity,
 		}
 		if !row.LastDelivery.IsZero() {
 			last := row.LastDelivery
@@ -89,9 +89,7 @@ func (r *PostgresRepository) Get(ctx context.Context, projectID, materialID uuid
 	}
 	return Stock{
 		MaterialID: row.MaterialID,
-		Name:       row.Name,
-		Category:   row.Category,
-		Unit:       row.Unit,
-		Quantity:   row.Quantity,
+		Name:       row.Name, Category: row.Category, Unit: row.Unit,
+		Quantity: row.Quantity,
 	}, nil
 }

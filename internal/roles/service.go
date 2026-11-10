@@ -17,7 +17,7 @@ var (
 
 type Service interface {
 	CreateRole(ctx context.Context, req CreateRoleRequest) (RoleResponse, error)
-	ListRoles(ctx context.Context, query string) ([]RoleResponse, error)
+	ListRoles(ctx context.Context) ([]RoleResponse, error)
 	CreatePolicy(ctx context.Context, roleID uuid.UUID, req CreatePolicyRequest) (PolicyResponse, error)
 	ListPolicies(ctx context.Context, roleID uuid.UUID) ([]PolicyResponse, error)
 	DeletePolicy(ctx context.Context, roleID uuid.UUID, resource, action string) error
@@ -47,8 +47,8 @@ func (s *service) CreateRole(ctx context.Context, req CreateRoleRequest) (RoleRe
 	return s.utils.ToRoleResponse(role), nil
 }
 
-func (s *service) ListRoles(ctx context.Context, query string) ([]RoleResponse, error) {
-	roles, err := s.repo.ListRoles(ctx, query)
+func (s *service) ListRoles(ctx context.Context) ([]RoleResponse, error) {
+	roles, err := s.repo.ListRoles(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -26,7 +26,11 @@ func (h *Handler) listStock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stock, err := h.svc.List(r.Context(), r.URL.Query().Get("q"), limit, offset)
+	q := r.URL.Query()
+	stock, err := h.svc.List(r.Context(), ListParams{
+		Query: q.Get("q"), Category: q.Get("category"), Status: q.Get("status"),
+		Sort: q.Get("sort"), Limit: limit, Offset: offset,
+	})
 	if err != nil {
 		h.utils.WriteServiceError(w, err)
 		return

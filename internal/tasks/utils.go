@@ -15,6 +15,7 @@ type Utils interface {
 	ListResponse(tasks []Task, projectDisplayID string, total int64, limit int32) ListTasksResponse
 	WriteServiceError(w http.ResponseWriter, err error)
 	ParseDates(start, end string) (time.Time, time.Time, error)
+	ParseDateRange(from, to string) (*time.Time, *time.Time, error)
 	NormalizeLimit(limit int32) int32
 	Late(task Task) bool
 }
@@ -96,6 +97,28 @@ func (utils) WriteServiceError(w http.ResponseWriter, err error) {
 	default:
 		jsonutil.Error(w, http.StatusInternalServerError, "internal server error")
 	}
+}
+
+func (utils) ParseDateRange(from, to string) (*time.Time, *time.Time, error) {
+	var start, end *time.Time
+	if from != "" {
+		parsed, err := time.Parse(dateLayout, from)
+		if err != nil {
+			return nil, nil, ErrInvalidInput
+		}
+		start = &parsed
+	}
+	if to != "" {
+		parsed, err := time.Parse(dateLayout, to)
+		if err != nil {
+			return nil, nil, ErrInvalidInput
+		}
+		end = &parsed
+	}
+	if start != nil && end != nil && end.Before(*start) {
+		return nil, nil, ErrInvalidInput
+	}
+	return start, end, nil
 }
 
 func (utils) ParseDates(start, end string) (time.Time, time.Time, error) {

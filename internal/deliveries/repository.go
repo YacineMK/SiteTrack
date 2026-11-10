@@ -37,26 +37,39 @@ type Line struct {
 }
 
 type Delivery struct {
-	ID             uuid.UUID
-	SenderType     string
-	SenderID       *uuid.UUID
-	ReceiverType   string
-	ReceiverID     *uuid.UUID
-	Status         string
-	SentAt         time.Time
-	ReceivedAt     *time.Time
-	SentBy         *uuid.UUID
-	ReceivedBy     *uuid.UUID
-	SentByName     string
-	ReceivedByName string
-	Lines          []Line
+	ID                uuid.UUID
+	SenderType        string
+	SenderID          *uuid.UUID
+	ReceiverType      string
+	ReceiverID        *uuid.UUID
+	Status            string
+	SentAt            time.Time
+	ReceivedAt        *time.Time
+	SentBy            *uuid.UUID
+	ReceivedBy        *uuid.UUID
+	SenderDisplayID   string
+	ReceiverDisplayID string
+	SentByName        string
+	ReceivedByName    string
+	Lines             []Line
+}
+
+type ListParams struct {
+	Status      string
+	Direction   string
+	FromDate    *time.Time
+	ToDate      *time.Time
+	ProjectID   *uuid.UUID
+	AfterSentAt *time.Time
+	AfterID     *uuid.UUID
+	Limit       int32
 }
 
 type Repository interface {
 	Create(ctx context.Context, delivery Delivery) (Delivery, error)
 	Get(ctx context.Context, id uuid.UUID) (Delivery, error)
-	ListCompany(ctx context.Context, status, query, direction, fromDate, toDate string, projectID uuid.UUID, limit int32, after string) ([]Delivery, int64, error)
-	ListProject(ctx context.Context, projectID uuid.UUID, status, query, direction, fromDate, toDate string, limit int32, after string) ([]Delivery, int64, error)
+	ListCompany(ctx context.Context, p ListParams) ([]Delivery, error)
+	ListProject(ctx context.Context, projectID uuid.UUID, p ListParams) ([]Delivery, error)
 	Transition(ctx context.Context, id uuid.UUID, status string, receivedBy *uuid.UUID) (Delivery, error)
 }
 
@@ -80,14 +93,11 @@ func (r *PostgresRepository) Create(ctx context.Context, delivery Delivery) (Del
 			var err error
 			if delivery.SenderType == PartyCompany {
 				rows, err = q.DeductCompanyStock(ctx, sqlc.DeductCompanyStockParams{
-					MaterialID: line.MaterialID,
-					Quantity:   line.Quantity,
+					MaterialID: line.MaterialID, Quantity: line.Quantity,
 				})
 			} else {
 				rows, err = q.DeductProjectStock(ctx, sqlc.DeductProjectStockParams{
-					ProjectID:  *delivery.SenderID,
-					MaterialID: line.MaterialID,
-					Quantity:   line.Quantity,
+					ProjectID: *delivery.SenderID, MaterialID: line.MaterialID, Quantity: line.Quantity,
 				})
 			}
 			if err != nil {
@@ -107,10 +117,10 @@ func (r *PostgresRepository) Create(ctx context.Context, delivery Delivery) (Del
 		if _, err := q.CreateDelivery(ctx, sqlc.CreateDeliveryParams{
 			ID:           id,
 			SenderType:   sqlc.DeliveryParty(delivery.SenderType),
-			SenderID:     toPgUUID(delivery.SenderID),
+			SenderID:     pgUUID(delivery.SenderID),
 			ReceiverType: sqlc.DeliveryParty(delivery.ReceiverType),
-			ReceiverID:   toPgUUID(delivery.ReceiverID),
-			SentBy:       toPgUUID(delivery.SentBy),
+			ReceiverID:   pgUUID(delivery.ReceiverID),
+			SentBy:       pgUUID(delivery.SentBy),
 		}); err != nil {
 			return err
 		}
@@ -121,10 +131,7 @@ func (r *PostgresRepository) Create(ctx context.Context, delivery Delivery) (Del
 				return err
 			}
 			if err := q.CreateDeliveryLine(ctx, sqlc.CreateDeliveryLineParams{
-				ID:         lineID,
-				DeliveryID: id,
-				MaterialID: line.MaterialID,
-				Quantity:   line.Quantity,
+				ID: lineID, DeliveryID: id, MaterialID: line.MaterialID, Quantity: line.Quantity,
 			}); err != nil {
 				return err
 			}
@@ -148,82 +155,118 @@ func (r *PostgresRepository) Get(ctx context.Context, id uuid.UUID) (Delivery, e
 		return Delivery{}, err
 	}
 
-	rows, err := r.queries.GetDeliveryLines(ctx, id)
+	lines, err := r.queries.GetDeliveryLines(ctx, []uuid.UUID{id})
 	if err != nil {
 		return Delivery{}, err
 	}
 
-	delivery := toDelivery(row)
-	delivery.Lines = make([]Line, 0, len(rows))
-	for _, line := range rows {
+	delivery := Delivery{
+		ID:           row.ID,
+		SenderType:   string(row.SenderType),
+		SenderID:     uuidPtr(row.SenderID),
+		ReceiverType: string(row.ReceiverType),
+		ReceiverID:   uuidPtr(row.ReceiverID),
+		Status:       string(row.Status),
+		SentAt:       row.SentAt,
+		ReceivedAt:   timePtr(row.ReceivedAt),
+		SentBy:       uuidPtr(row.SentBy),
+		ReceivedBy:   uuidPtr(row.ReceivedBy),
+		Lines:        make([]Line, 0, len(lines)),
+	}
+	for _, line := range lines {
 		delivery.Lines = append(delivery.Lines, Line{
-			MaterialID: line.MaterialID,
-			Name:       line.Name,
-			Unit:       line.Unit,
-			Quantity:   line.Quantity,
+			MaterialID: line.MaterialID, Name: line.Name, Unit: line.Unit, Quantity: line.Quantity,
 		})
 	}
 	return delivery, nil
 }
 
-func (r *PostgresRepository) ListCompany(ctx context.Context, status, query, direction, fromDate, toDate string, projectID uuid.UUID, limit int32, after string) ([]Delivery, int64, error) {
-	total, err := r.queries.CountCompanyDeliveries(ctx, sqlc.CountCompanyDeliveriesParams{
-		Direction:    direction,
-		ProjectID:    projectID,
-		StatusFilter: status,
-		FromDate:     fromDate,
-		ToDate:       toDate,
-		Query:        query,
-	})
-	if err != nil {
-		return nil, 0, err
-	}
-
+func (r *PostgresRepository) ListCompany(ctx context.Context, p ListParams) ([]Delivery, error) {
 	rows, err := r.queries.ListCompanyDeliveries(ctx, sqlc.ListCompanyDeliveriesParams{
-		Direction:    direction,
-		ProjectID:    projectID,
-		StatusFilter: status,
-		FromDate:     fromDate,
-		ToDate:       toDate,
-		Query:        query,
-		AfterID:      after,
-		PageLimit:    limit,
+		ProjectID:   pgUUID(p.ProjectID),
+		Direction:   p.Direction,
+		Status:      p.Status,
+		FromDate:    pgDate(p.FromDate),
+		ToDate:      pgDate(p.ToDate),
+		AfterSentAt: pgTime(p.AfterSentAt),
+		AfterID:     pgUUID(p.AfterID),
+		PageLimit:   p.Limit,
 	})
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	return toCompanyDeliveries(rows), total, nil
+	deliveries := make([]Delivery, 0, len(rows))
+	ids := make([]uuid.UUID, 0, len(rows))
+	for _, row := range rows {
+		deliveries = append(deliveries, Delivery{
+			ID: row.ID, SenderType: string(row.SenderType), SenderID: uuidPtr(row.SenderID),
+			ReceiverType: string(row.ReceiverType), ReceiverID: uuidPtr(row.ReceiverID),
+			Status: string(row.Status), SentAt: row.SentAt, ReceivedAt: timePtr(row.ReceivedAt),
+			SentBy: uuidPtr(row.SentBy), ReceivedBy: uuidPtr(row.ReceivedBy),
+			SenderDisplayID: row.SenderDisplayID.String, ReceiverDisplayID: row.ReceiverDisplayID.String,
+			SentByName: row.SentByName.String, ReceivedByName: row.ReceivedByName.String,
+		})
+		ids = append(ids, row.ID)
+	}
+	if err := r.attachLines(ctx, deliveries, ids); err != nil {
+		return nil, err
+	}
+	return deliveries, nil
 }
 
-func (r *PostgresRepository) ListProject(ctx context.Context, projectID uuid.UUID, status, query, direction, fromDate, toDate string, limit int32, after string) ([]Delivery, int64, error) {
-	total, err := r.queries.CountProjectDeliveries(ctx, sqlc.CountProjectDeliveriesParams{
-		ProjectID:    projectID,
-		Direction:    direction,
-		StatusFilter: status,
-		FromDate:     fromDate,
-		ToDate:       toDate,
-		Query:        query,
-	})
-	if err != nil {
-		return nil, 0, err
-	}
-
+func (r *PostgresRepository) ListProject(ctx context.Context, projectID uuid.UUID, p ListParams) ([]Delivery, error) {
 	rows, err := r.queries.ListProjectDeliveries(ctx, sqlc.ListProjectDeliveriesParams{
-		ProjectID:    projectID,
-		Direction:    direction,
-		StatusFilter: status,
-		FromDate:     fromDate,
-		ToDate:       toDate,
-		Query:        query,
-		AfterID:      after,
-		PageLimit:    limit,
+		ProjectID:   projectID,
+		Direction:   p.Direction,
+		Status:      p.Status,
+		FromDate:    pgDate(p.FromDate),
+		ToDate:      pgDate(p.ToDate),
+		AfterSentAt: pgTime(p.AfterSentAt),
+		AfterID:     pgUUID(p.AfterID),
+		PageLimit:   p.Limit,
 	})
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	return toProjectDeliveries(rows), total, nil
+	deliveries := make([]Delivery, 0, len(rows))
+	ids := make([]uuid.UUID, 0, len(rows))
+	for _, row := range rows {
+		deliveries = append(deliveries, Delivery{
+			ID: row.ID, SenderType: string(row.SenderType), SenderID: uuidPtr(row.SenderID),
+			ReceiverType: string(row.ReceiverType), ReceiverID: uuidPtr(row.ReceiverID),
+			Status: string(row.Status), SentAt: row.SentAt, ReceivedAt: timePtr(row.ReceivedAt),
+			SentBy: uuidPtr(row.SentBy), ReceivedBy: uuidPtr(row.ReceivedBy),
+			SenderDisplayID: row.SenderDisplayID.String, ReceiverDisplayID: row.ReceiverDisplayID.String,
+			SentByName: row.SentByName.String, ReceivedByName: row.ReceivedByName.String,
+		})
+		ids = append(ids, row.ID)
+	}
+	if err := r.attachLines(ctx, deliveries, ids); err != nil {
+		return nil, err
+	}
+	return deliveries, nil
+}
+
+func (r *PostgresRepository) attachLines(ctx context.Context, deliveries []Delivery, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := r.queries.GetDeliveryLines(ctx, ids)
+	if err != nil {
+		return err
+	}
+	byID := make(map[uuid.UUID][]Line, len(deliveries))
+	for _, line := range rows {
+		byID[line.DeliveryID] = append(byID[line.DeliveryID], Line{
+			MaterialID: line.MaterialID, Name: line.Name, Unit: line.Unit, Quantity: line.Quantity,
+		})
+	}
+	for i := range deliveries {
+		deliveries[i].Lines = byID[deliveries[i].ID]
+	}
+	return nil
 }
 
 func (r *PostgresRepository) Transition(ctx context.Context, id uuid.UUID, status string, receivedBy *uuid.UUID) (Delivery, error) {
@@ -241,14 +284,11 @@ func (r *PostgresRepository) Transition(ctx context.Context, id uuid.UUID, statu
 		var updateErr error
 		if receivedBy != nil {
 			_, updateErr = q.CompleteDeliveryStatus(ctx, sqlc.CompleteDeliveryStatusParams{
-				ID:         id,
-				Status:     sqlc.DeliveryStatus(status),
-				ReceivedBy: toPgUUID(receivedBy),
+				ID: id, Status: sqlc.DeliveryStatus(status), ReceivedBy: pgUUID(receivedBy),
 			})
 		} else {
 			_, updateErr = q.UpdateDeliveryStatus(ctx, sqlc.UpdateDeliveryStatusParams{
-				ID:     id,
-				Status: sqlc.DeliveryStatus(status),
+				ID: id, Status: sqlc.DeliveryStatus(status),
 			})
 		}
 		if updateErr != nil {
@@ -258,16 +298,16 @@ func (r *PostgresRepository) Transition(ctx context.Context, id uuid.UUID, statu
 			return updateErr
 		}
 
-		lines, err := q.GetDeliveryLines(ctx, id)
+		lines, err := q.GetDeliveryLines(ctx, []uuid.UUID{id})
 		if err != nil {
 			return err
 		}
 
 		partyType := string(current.SenderType)
-		partyID := fromPgUUID(current.SenderID)
+		partyID := uuidPtr(current.SenderID)
 		if status == StatusDelivered {
 			partyType = string(current.ReceiverType)
-			partyID = fromPgUUID(current.ReceiverID)
+			partyID = uuidPtr(current.ReceiverID)
 		}
 		return creditStock(ctx, q, partyType, partyID, lines)
 	})
@@ -283,14 +323,11 @@ func creditStock(ctx context.Context, q *sqlc.Queries, partyType string, partyID
 		var err error
 		if partyType == PartyCompany {
 			_, err = q.AddCompanyStock(ctx, sqlc.AddCompanyStockParams{
-				MaterialID: line.MaterialID,
-				Quantity:   line.Quantity,
+				MaterialID: line.MaterialID, Quantity: line.Quantity,
 			})
 		} else {
 			_, err = q.AddProjectStock(ctx, sqlc.AddProjectStockParams{
-				ProjectID:  *partyID,
-				MaterialID: line.MaterialID,
-				Quantity:   line.Quantity,
+				ProjectID: *partyID, MaterialID: line.MaterialID, Quantity: line.Quantity,
 			})
 		}
 		if err != nil {
@@ -300,71 +337,14 @@ func creditStock(ctx context.Context, q *sqlc.Queries, partyType string, partyID
 	return nil
 }
 
-func toCompanyDeliveries(rows []sqlc.ListCompanyDeliveriesRow) []Delivery {
-	deliveries := make([]Delivery, 0, len(rows))
-	for _, row := range rows {
-		deliveries = append(deliveries, Delivery{
-			ID:             row.ID,
-			SenderType:     string(row.SenderType),
-			SenderID:       fromPgUUID(row.SenderID),
-			ReceiverType:   string(row.ReceiverType),
-			ReceiverID:     fromPgUUID(row.ReceiverID),
-			Status:         string(row.Status),
-			SentAt:         row.SentAt,
-			ReceivedAt:     fromPgTime(row.ReceivedAt),
-			SentBy:         fromPgUUID(row.SentBy),
-			ReceivedBy:     fromPgUUID(row.ReceivedBy),
-			SentByName:     row.SentByName,
-			ReceivedByName: row.ReceivedByName,
-		})
-	}
-	return deliveries
-}
-
-func toProjectDeliveries(rows []sqlc.ListProjectDeliveriesRow) []Delivery {
-	deliveries := make([]Delivery, 0, len(rows))
-	for _, row := range rows {
-		deliveries = append(deliveries, Delivery{
-			ID:             row.ID,
-			SenderType:     string(row.SenderType),
-			SenderID:       fromPgUUID(row.SenderID),
-			ReceiverType:   string(row.ReceiverType),
-			ReceiverID:     fromPgUUID(row.ReceiverID),
-			Status:         string(row.Status),
-			SentAt:         row.SentAt,
-			ReceivedAt:     fromPgTime(row.ReceivedAt),
-			SentBy:         fromPgUUID(row.SentBy),
-			ReceivedBy:     fromPgUUID(row.ReceivedBy),
-			SentByName:     row.SentByName,
-			ReceivedByName: row.ReceivedByName,
-		})
-	}
-	return deliveries
-}
-
-func toDelivery(row sqlc.Delivery) Delivery {
-	return Delivery{
-		ID:           row.ID,
-		SenderType:   string(row.SenderType),
-		SenderID:     fromPgUUID(row.SenderID),
-		ReceiverType: string(row.ReceiverType),
-		ReceiverID:   fromPgUUID(row.ReceiverID),
-		Status:       string(row.Status),
-		SentAt:       row.SentAt,
-		ReceivedAt:   fromPgTime(row.ReceivedAt),
-		SentBy:       fromPgUUID(row.SentBy),
-		ReceivedBy:   fromPgUUID(row.ReceivedBy),
-	}
-}
-
-func toPgUUID(id *uuid.UUID) pgtype.UUID {
+func pgUUID(id *uuid.UUID) pgtype.UUID {
 	if id == nil {
 		return pgtype.UUID{}
 	}
 	return pgtype.UUID{Bytes: *id, Valid: true}
 }
 
-func fromPgUUID(id pgtype.UUID) *uuid.UUID {
+func uuidPtr(id pgtype.UUID) *uuid.UUID {
 	if !id.Valid {
 		return nil
 	}
@@ -372,9 +352,23 @@ func fromPgUUID(id pgtype.UUID) *uuid.UUID {
 	return &value
 }
 
-func fromPgTime(value pgtype.Timestamptz) *time.Time {
+func pgTime(t *time.Time) pgtype.Timestamptz {
+	if t == nil {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: *t, Valid: true}
+}
+
+func timePtr(value pgtype.Timestamptz) *time.Time {
 	if !value.Valid {
 		return nil
 	}
 	return &value.Time
+}
+
+func pgDate(t *time.Time) pgtype.Date {
+	if t == nil {
+		return pgtype.Date{}
+	}
+	return pgtype.Date{Time: *t, Valid: true}
 }

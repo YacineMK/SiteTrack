@@ -23,7 +23,6 @@ type RoleResponse struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	IsSystem    bool   `json:"is_system"`
 }
 
 type AssignRoleRequest struct {

@@ -103,7 +103,6 @@ type AppRole struct {
 	ID          uuid.UUID
 	Name        string
 	Description string
-	IsSystem    bool
 }
 
 type CompanyStoreStock struct {
@@ -174,16 +173,12 @@ type Project struct {
 	Description         string
 	PlannedStartDate    time.Time
 	PlannedEndDate      time.Time
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
-	Search              interface{}
 	MemberCount         int32
 	TaskCountNotStarted int32
 	TaskCountInProgress int32
 	TaskCountDone       int32
-	LateCount           int32
-	BlockedCount        int32
-	Progress            pgtype.Float8
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 type ProjectIDCounter struct {
@@ -219,10 +214,10 @@ type Task struct {
 	PlannedStartDate time.Time
 	PlannedEndDate   time.Time
 	Status           string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
 	Blocked          bool
 	DependentsCount  int32
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 type TaskDependency struct {
@@ -240,9 +235,7 @@ type User struct {
 	Name         string
 	Email        string
 	PasswordHash string
-	AppRole      string
-	TokenVersion int32
+	RoleID       uuid.UUID
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
-	RoleID       uuid.UUID
 }

@@ -18,8 +18,8 @@ var ErrInvalidInput = errors.New("invalid input")
 type Service interface {
 	CreateFromCompany(ctx context.Context, actorID uuid.UUID, req CreateCompanyDeliveryRequest) (DeliveryResponse, error)
 	CreateFromProject(ctx context.Context, projectDisplayID string, actorID uuid.UUID, req CreateProjectDeliveryRequest) (DeliveryResponse, error)
-	ListCompany(ctx context.Context, status, query, direction, fromDate, toDate, projectDisplayID string, limit int32, after string) (ListDeliveriesResponse, error)
-	ListProject(ctx context.Context, projectDisplayID, status, query, direction, fromDate, toDate string, limit int32, after string) (ListDeliveriesResponse, error)
+	ListCompany(ctx context.Context, status, direction, fromDate, toDate, projectDisplayID, after string, limit int32) (ListDeliveriesResponse, error)
+	ListProject(ctx context.Context, projectDisplayID, status, direction, fromDate, toDate, after string, limit int32) (ListDeliveriesResponse, error)
 	Get(ctx context.Context, actorID uuid.UUID, role, id string) (DeliveryResponse, error)
 	Record(ctx context.Context, actorID uuid.UUID, role, id string) (DeliveryResponse, error)
 	Reject(ctx context.Context, actorID uuid.UUID, role, id string) (DeliveryResponse, error)
@@ -94,43 +94,57 @@ func (s *service) CreateFromProject(ctx context.Context, projectDisplayID string
 	return s.utils.ToResponse(delivery), nil
 }
 
-func (s *service) ListCompany(ctx context.Context, status, query, direction, fromDate, toDate, projectDisplayID string, limit int32, after string) (ListDeliveriesResponse, error) {
-	if !validStatus(status) || !validDirection(direction) || !validDateRange(fromDate, toDate) {
+func (s *service) ListCompany(ctx context.Context, status, direction, fromDate, toDate, projectDisplayID, after string, limit int32) (ListDeliveriesResponse, error) {
+	if !validStatus(status) || !validDirection(direction) {
 		return ListDeliveriesResponse{}, ErrInvalidInput
 	}
-	if after != "" {
-		if _, err := uuid.Parse(after); err != nil {
-			return ListDeliveriesResponse{}, ErrInvalidInput
-		}
+	from, to, err := parseDateRange(fromDate, toDate)
+	if err != nil {
+		return ListDeliveriesResponse{}, err
+	}
+	afterID, err := parseAfter(after)
+	if err != nil {
+		return ListDeliveriesResponse{}, err
 	}
 
-	var projectID uuid.UUID
+	var projectID *uuid.UUID
 	if projectDisplayID != "" {
 		project, err := s.projects.GetByDisplayID(ctx, projectDisplayID)
 		if err != nil {
 			return ListDeliveriesResponse{}, err
 		}
-		projectID = project.ID
+		projectID = &project.ID
 	}
 
 	limit = s.utils.NormalizeLimit(limit)
-
-	deliveries, total, err := s.repo.ListCompany(ctx, status, query, direction, fromDate, toDate, projectID, limit, after)
+	afterSentAt, err := s.cursor(ctx, afterID)
 	if err != nil {
 		return ListDeliveriesResponse{}, err
 	}
 
-	return s.utils.ListResponse(deliveries, total, limit), nil
+	deliveries, err := s.repo.ListCompany(ctx, ListParams{
+		Status: status, Direction: direction,
+		FromDate: from, ToDate: to, ProjectID: projectID,
+		AfterSentAt: afterSentAt, AfterID: afterID, Limit: limit,
+	})
+	if err != nil {
+		return ListDeliveriesResponse{}, err
+	}
+
+	return s.utils.ListResponse(deliveries, int64(len(deliveries)), limit), nil
 }
 
-func (s *service) ListProject(ctx context.Context, projectDisplayID, status, query, direction, fromDate, toDate string, limit int32, after string) (ListDeliveriesResponse, error) {
-	if !validStatus(status) || !validDirection(direction) || !validDateRange(fromDate, toDate) {
+func (s *service) ListProject(ctx context.Context, projectDisplayID, status, direction, fromDate, toDate, after string, limit int32) (ListDeliveriesResponse, error) {
+	if !validStatus(status) || !validDirection(direction) {
 		return ListDeliveriesResponse{}, ErrInvalidInput
 	}
-	if after != "" {
-		if _, err := uuid.Parse(after); err != nil {
-			return ListDeliveriesResponse{}, ErrInvalidInput
-		}
+	from, to, err := parseDateRange(fromDate, toDate)
+	if err != nil {
+		return ListDeliveriesResponse{}, err
+	}
+	afterID, err := parseAfter(after)
+	if err != nil {
+		return ListDeliveriesResponse{}, err
 	}
 
 	project, err := s.projects.GetByDisplayID(ctx, projectDisplayID)
@@ -139,13 +153,65 @@ func (s *service) ListProject(ctx context.Context, projectDisplayID, status, que
 	}
 
 	limit = s.utils.NormalizeLimit(limit)
-
-	deliveries, total, err := s.repo.ListProject(ctx, project.ID, status, query, direction, fromDate, toDate, limit, after)
+	afterSentAt, err := s.cursor(ctx, afterID)
 	if err != nil {
 		return ListDeliveriesResponse{}, err
 	}
 
-	return s.utils.ListResponse(deliveries, total, limit), nil
+	deliveries, err := s.repo.ListProject(ctx, project.ID, ListParams{
+		Status: status, Direction: direction,
+		FromDate: from, ToDate: to,
+		AfterSentAt: afterSentAt, AfterID: afterID, Limit: limit,
+	})
+	if err != nil {
+		return ListDeliveriesResponse{}, err
+	}
+
+	return s.utils.ListResponse(deliveries, int64(len(deliveries)), limit), nil
+}
+
+func (s *service) cursor(ctx context.Context, afterID *uuid.UUID) (*time.Time, error) {
+	if afterID == nil {
+		return nil, nil
+	}
+	d, err := s.repo.Get(ctx, *afterID)
+	if err != nil {
+		return nil, err
+	}
+	return &d.SentAt, nil
+}
+
+func parseAfter(after string) (*uuid.UUID, error) {
+	if after == "" {
+		return nil, nil
+	}
+	id, err := uuid.Parse(after)
+	if err != nil {
+		return nil, ErrInvalidInput
+	}
+	return &id, nil
+}
+
+func parseDateRange(from, to string) (*time.Time, *time.Time, error) {
+	var start, end *time.Time
+	if from != "" {
+		parsed, err := time.Parse(dateLayout, from)
+		if err != nil {
+			return nil, nil, ErrInvalidInput
+		}
+		start = &parsed
+	}
+	if to != "" {
+		parsed, err := time.Parse(dateLayout, to)
+		if err != nil {
+			return nil, nil, ErrInvalidInput
+		}
+		end = &parsed
+	}
+	if start != nil && end != nil && end.Before(*start) {
+		return nil, nil, ErrInvalidInput
+	}
+	return start, end, nil
 }
 
 func (s *service) Get(ctx context.Context, actorID uuid.UUID, role, id string) (DeliveryResponse, error) {
@@ -277,21 +343,3 @@ func validDirection(direction string) bool {
 	return direction == "" || direction == "in" || direction == "out"
 }
 
-func validDateRange(fromDate, toDate string) bool {
-	var from, to time.Time
-	if fromDate != "" {
-		parsed, err := time.Parse(dateLayout, fromDate)
-		if err != nil {
-			return false
-		}
-		from = parsed
-	}
-	if toDate != "" {
-		parsed, err := time.Parse(dateLayout, toDate)
-		if err != nil {
-			return false
-		}
-		to = parsed
-	}
-	return fromDate == "" || toDate == "" || !to.Before(from)
-}
