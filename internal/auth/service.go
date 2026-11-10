@@ -62,6 +62,14 @@ func (s *service) Register(ctx context.Context, req RegisterRequest) (UserRespon
 		return UserResponse{}, ErrInvalidInput
 	}
 
+	roleOK, err := s.repo.RoleExists(ctx, req.AppRole)
+	if err != nil {
+		return UserResponse{}, err
+	}
+	if !roleOK {
+		return UserResponse{}, ErrInvalidInput
+	}
+
 	passwordHash, err := hash.Hash(req.Password)
 	if err != nil {
 		return UserResponse{}, err

@@ -22,3 +22,6 @@ JOIN app_roles ar ON ar.id = u.role_id;
 
 -- name: EmailExists :one
 SELECT EXISTS(SELECT 1 FROM users WHERE email = $1);
+
+-- name: RoleExists :one
+SELECT EXISTS(SELECT 1 FROM app_roles WHERE name = $1);

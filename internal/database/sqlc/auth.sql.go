@@ -136,3 +136,14 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow
 	)
 	return i, err
 }
+
+const roleExists = `-- name: RoleExists :one
+SELECT EXISTS(SELECT 1 FROM app_roles WHERE name = $1)
+`
+
+func (q *Queries) RoleExists(ctx context.Context, name string) (bool, error) {
+	row := q.db.QueryRow(ctx, roleExists, name)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
