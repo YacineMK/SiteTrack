@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const addProjectMember = `-- name: AddProjectMember :exec
@@ -195,6 +196,45 @@ func (q *Queries) GetProjectByDisplayID(ctx context.Context, displayID string) (
 		&i.TaskCountDone,
 	)
 	return i, err
+}
+
+const getProjectMemberPolicies = `-- name: GetProjectMemberPolicies :many
+SELECT rp.resource, rp.action, r.is_admin
+FROM project_members pm
+JOIN roles r ON r.id = pm.role_id
+LEFT JOIN role_policies rp ON rp.role_id = r.id
+WHERE pm.project_id = $1 AND pm.user_id = $2
+`
+
+type GetProjectMemberPoliciesParams struct {
+	ProjectID uuid.UUID
+	UserID    uuid.UUID
+}
+
+type GetProjectMemberPoliciesRow struct {
+	Resource pgtype.Text
+	Action   pgtype.Text
+	IsAdmin  bool
+}
+
+func (q *Queries) GetProjectMemberPolicies(ctx context.Context, arg GetProjectMemberPoliciesParams) ([]GetProjectMemberPoliciesRow, error) {
+	rows, err := q.db.Query(ctx, getProjectMemberPolicies, arg.ProjectID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetProjectMemberPoliciesRow{}
+	for rows.Next() {
+		var i GetProjectMemberPoliciesRow
+		if err := rows.Scan(&i.Resource, &i.Action, &i.IsAdmin); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getProjectMembership = `-- name: GetProjectMembership :one
