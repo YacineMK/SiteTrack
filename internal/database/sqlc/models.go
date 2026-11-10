@@ -201,6 +201,7 @@ type Role struct {
 	ProjectID   pgtype.UUID
 	IsAdmin     bool
 	IsSystem    bool
+	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
 

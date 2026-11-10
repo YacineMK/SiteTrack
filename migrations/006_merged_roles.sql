@@ -5,6 +5,7 @@ ALTER TABLE roles
     ADD COLUMN project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
     ADD COLUMN is_admin   BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN is_system  BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 UPDATE roles SET is_system = TRUE
@@ -46,6 +47,7 @@ DROP INDEX roles_scope_name_idx;
 CREATE UNIQUE INDEX app_roles_name_key ON roles (name);
 ALTER TABLE roles
     DROP COLUMN updated_at,
+    DROP COLUMN created_at,
     DROP COLUMN is_system,
     DROP COLUMN is_admin,
     DROP COLUMN project_id;

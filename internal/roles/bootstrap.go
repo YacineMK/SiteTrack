@@ -44,7 +44,7 @@ func Bootstrap(ctx context.Context, db *pgxpool.Pool) error {
 	queries := sqlc.New(db)
 
 	for _, policy := range defaultPolicies {
-		if err := queries.UpsertRolePolicy(ctx, sqlc.UpsertRolePolicyParams{
+		if err := queries.UpsertAppRolePolicyByName(ctx, sqlc.UpsertAppRolePolicyByNameParams{
 			Name:     policy.role,
 			Resource: policy.resource,
 			Action:   policy.action,
