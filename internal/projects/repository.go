@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/YacineMK/SiteTrack/internal/database/sqlc"
+	"github.com/YacineMK/SiteTrack/kit/rbac"
 )
 
 var (
@@ -95,6 +96,7 @@ type OutboxEvent struct {
 }
 
 type Repository interface {
+	ProjectPolicies(ctx context.Context, projectID, userID uuid.UUID) ([]rbac.Policy, bool, error)
 	Create(ctx context.Context, project Project, adminID uuid.UUID) (Project, error)
 	GetByDisplayID(ctx context.Context, displayID string) (Project, error)
 	List(ctx context.Context, p ListParams) ([]Project, int64, error)
@@ -393,6 +395,26 @@ func (r *PostgresRepository) Membership(ctx context.Context, projectID, userID u
 		return false, false, err
 	}
 	return true, isAdmin, nil
+}
+
+func (r *PostgresRepository) ProjectPolicies(ctx context.Context, projectID, userID uuid.UUID) ([]rbac.Policy, bool, error) {
+	rows, err := r.queries.GetProjectMemberPolicies(ctx, sqlc.GetProjectMemberPoliciesParams{
+		ProjectID: projectID, UserID: userID,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	if len(rows) == 0 {
+		return nil, false, nil
+	}
+	isAdmin := rows[0].IsAdmin
+	policies := make([]rbac.Policy, 0, len(rows))
+	for _, row := range rows {
+		if row.Resource.Valid && row.Action.Valid {
+			policies = append(policies, rbac.Policy{Resource: row.Resource.String, Action: row.Action.String})
+		}
+	}
+	return policies, isAdmin, nil
 }
 
 func (r *PostgresRepository) FindUserByEmail(ctx context.Context, email string) (Invitee, error) {

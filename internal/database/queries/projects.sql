@@ -118,3 +118,10 @@ WHERE n.name = 'Member';
 
 -- name: FindUserByEmail :one
 SELECT id, name, email FROM users WHERE email = $1;
+
+-- name: GetProjectMemberPolicies :many
+SELECT rp.resource, rp.action, r.is_admin
+FROM project_members pm
+JOIN roles r ON r.id = pm.role_id
+LEFT JOIN role_policies rp ON rp.role_id = r.id
+WHERE pm.project_id = $1 AND pm.user_id = $2;
