@@ -35,8 +35,8 @@ type App struct {
 }
 
 func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtManager *kitjwt.Manager, cookieSecure bool, notificationHub *notifications.Hub, inviteTTL time.Duration, appBaseURL string, corsOrigins []string) *App {
-	rolesModule := roles.New(roles.Dependencies{DB: postgres.Pool})
 	projectsModule := projects.New(projects.Dependencies{DB: postgres.Pool, Redis: redis, InviteTTL: inviteTTL, AppBaseURL: appBaseURL})
+	rolesModule := roles.New(roles.Dependencies{DB: postgres.Pool, Access: projectsModule.Access()})
 
 	authModule := auth.New(auth.Dependencies{
 		DB:           postgres.Pool,
