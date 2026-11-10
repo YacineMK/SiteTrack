@@ -50,27 +50,6 @@ func AuthenticateMiddleware(validator TokenValidator) func(http.Handler) http.Ha
 	}
 }
 
-func AuthorizationMiddleware(allowedRoles ...string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			role, ok := AppRole(r.Context())
-			if !ok {
-				jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
-				return
-			}
-
-			for _, allowed := range allowedRoles {
-				if role == allowed {
-					next.ServeHTTP(w, r)
-					return
-				}
-			}
-
-			jsonutil.Error(w, http.StatusForbidden, "forbidden")
-		})
-	}
-}
-
 func WithContext(ctx context.Context, userID uuid.UUID, appRole string) context.Context {
 	ctx = context.WithValue(ctx, userIDKey, userID)
 	return context.WithValue(ctx, appRoleKey, appRole)
