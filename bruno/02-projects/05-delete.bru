@@ -1,0 +1,16 @@
+meta {
+  name: Delete project
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/projects/{{projectId}}
+  body: none
+  auth: none
+}
+
+docs {
+  Project admin only. 204. 409 if the project has deliveries (delivery history
+  is kept). Project and task IDs are never reused.
+}

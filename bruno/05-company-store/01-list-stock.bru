@@ -1,0 +1,27 @@
+meta {
+  name: List stock
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/company-store/stock
+  body: none
+  auth: none
+}
+
+params:query {
+  q:
+  category:
+  status:
+  sort: name
+  limit: 20
+  offset: 0
+}
+
+docs {
+  Company store manager or SuperAdmin only (403 otherwise).
+  status: out_of_stock | low | available.
+  sort: name | quantity | status.
+  Rows include quantity, reorder_point, in_transit (to projects), status.
+}

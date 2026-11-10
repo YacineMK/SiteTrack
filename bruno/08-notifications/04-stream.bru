@@ -1,0 +1,16 @@
+meta {
+  name: Stream (SSE)
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/notifications/stream
+  body: none
+  auth: none
+}
+
+docs {
+  Server-sent events. Emits `event: notification` with a NotificationResponse
+  when a new notification arrives, plus a ping every 20s. Keep open.
+}

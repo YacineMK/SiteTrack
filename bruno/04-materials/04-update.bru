@@ -1,0 +1,27 @@
+meta {
+  name: Update material
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/materials/{{materialId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Cement, OPC 50 kg bag",
+    "category": "binder",
+    "unit": "bag"
+  }
+}
+
+docs {
+  200 -> MaterialResponse. 409 -> duplicate name.
+}

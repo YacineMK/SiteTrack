@@ -1,0 +1,26 @@
+meta {
+  name: Set reorder point
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/company-store/stock/{{materialId}}/reorder-point
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "reorder_point": 20
+  }
+}
+
+docs {
+  200 -> StockResponse. Status becomes out_of_stock at 0, low at or below
+  the reorder point, available above it.
+}

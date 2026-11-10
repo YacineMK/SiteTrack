@@ -1,0 +1,33 @@
+meta {
+  name: Login
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "{{email}}",
+    "password": "{{password}}"
+  }
+}
+
+docs {
+  Sets the access_token (15m) and refresh_token (7d) HttpOnly cookies.
+  Failed login always answers 401 with the same message.
+}
+
+tests {
+  test("200 or 401", function() {
+    expect([200, 401]).to.include(res.getStatus());
+  });
+}

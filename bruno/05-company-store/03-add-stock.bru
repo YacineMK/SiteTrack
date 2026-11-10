@@ -1,0 +1,27 @@
+meta {
+  name: Add stock
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/company-store/stock/additions
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "material_id": "{{materialId}}",
+    "quantity": 100
+  }
+}
+
+docs {
+  The only way new material enters SiteTrack. 201 -> StockResponse.
+  404 if the material is unknown.
+}

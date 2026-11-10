@@ -1,0 +1,30 @@
+meta {
+  name: Create role
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/roles/
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "auditor",
+    "description": "Read-only project access"
+  }
+}
+
+script:post-response {
+  bru.setEnvVar("roleId", res.body.id);
+}
+
+docs {
+  SuperAdmin. 201 -> RoleResponse. 409 if the name exists.
+}

@@ -1,0 +1,15 @@
+meta {
+  name: Me
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/auth/me
+  body: none
+  auth: none
+}
+
+docs {
+  Current user's profile. 200 -> UserResponse. 401 if logged out.
+}

@@ -1,0 +1,16 @@
+meta {
+  name: Record delivery
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/deliveries/{{deliveryId}}/record
+  body: none
+  auth: none
+}
+
+docs {
+  Receiver only. in_transit -> delivered; quantities join the receiver's stock.
+  200 -> DeliveryResponse. 409 if not in transit.
+}

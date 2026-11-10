@@ -1,0 +1,15 @@
+meta {
+  name: Mark read
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{baseUrl}}/notifications/{{notificationId}}/read
+  body: none
+  auth: none
+}
+
+docs {
+  Marks own notification read. 200 -> NotificationResponse. 404 otherwise.
+}

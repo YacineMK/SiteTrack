@@ -1,0 +1,29 @@
+meta {
+  name: Create project delivery (back to company)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/projects/{{projectId}}/deliveries
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "lines": [
+      { "material_id": "{{materialId}}", "quantity": 5 }
+    ]
+  }
+}
+
+docs {
+  Project member. Sends material from the project store back to the company
+  store. Quantities leave the project store immediately; in_transit.
+  201 -> DeliveryResponse. 409 -> insufficient stock.
+}

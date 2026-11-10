@@ -1,0 +1,15 @@
+meta {
+  name: Delete task
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/projects/{{projectId}}/tasks/{{taskId}}
+  body: none
+  auth: none
+}
+
+docs {
+  Project member. 204. Removing a task also removes its dependency edges.
+}

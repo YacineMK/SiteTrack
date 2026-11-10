@@ -1,0 +1,33 @@
+meta {
+  name: Create project
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/projects/
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Riverside Tower",
+    "description": "Level 2 slab works",
+    "planned_start_date": "2026-01-01",
+    "planned_end_date": "2026-12-31"
+  }
+}
+
+script:post-response {
+  bru.setEnvVar("projectId", res.body.display_id);
+}
+
+docs {
+  201 -> ProjectResponse. The creator becomes a project admin.
+  display_id is generated (PRJ-0001, PRJ-0002, ...).
+}

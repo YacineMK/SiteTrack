@@ -1,0 +1,25 @@
+meta {
+  name: List projects
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/projects/
+  body: none
+  auth: none
+}
+
+params:query {
+  q:
+  late: false
+  sort: name
+  limit: 20
+  offset: 0
+}
+
+docs {
+  Every project the caller can access. sort: name | start_date | progress | late.
+  q matches name or display_id. late=true keeps projects with late tasks.
+  Each row includes task counts, progress, late/blocked counts, is_admin.
+}

@@ -1,0 +1,15 @@
+meta {
+  name: Reject invitation
+  type: http
+  seq: 12
+}
+
+post {
+  url: {{baseUrl}}/invitations/{{invitationId}}/reject
+  body: none
+  auth: none
+}
+
+docs {
+  Only the invited user. Marks the invitation answered without joining. 204.
+}

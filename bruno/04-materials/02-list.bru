@@ -1,0 +1,21 @@
+meta {
+  name: List materials
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/materials/
+  body: none
+  auth: none
+}
+
+params:query {
+  q:
+  limit: 20
+  offset: 0
+}
+
+docs {
+  Search by name. 200 -> {items,total,limit,offset}.
+}

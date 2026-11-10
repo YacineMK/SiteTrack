@@ -1,0 +1,28 @@
+meta {
+  name: List notifications
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/notifications
+  body: none
+  auth: none
+}
+
+params:query {
+  unread: false
+  limit: 20
+  offset: 0
+}
+
+script:post-response {
+  if (res.body.items && res.body.items.length > 0) {
+    bru.setEnvVar("notificationId", res.body.items[0].id);
+  }
+}
+
+docs {
+  Own notifications, newest first. Project invitations appear here with
+  data.project_id and data.role. 200 -> {items,total,limit,offset}.
+}

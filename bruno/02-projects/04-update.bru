@@ -1,0 +1,28 @@
+meta {
+  name: Update project
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/projects/{{projectId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Riverside Tower (rev B)",
+    "description": "Level 2 slab works",
+    "planned_start_date": "2026-01-01",
+    "planned_end_date": "2026-12-31"
+  }
+}
+
+docs {
+  Project admin only. 200 -> ProjectResponse. 403 for members who are not admins.
+}

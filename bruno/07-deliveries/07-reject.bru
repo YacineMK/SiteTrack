@@ -1,0 +1,16 @@
+meta {
+  name: Reject delivery
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/deliveries/{{deliveryId}}/reject
+  body: none
+  auth: none
+}
+
+docs {
+  Receiver only. in_transit -> rejected; quantities return to the sender.
+  409 if not in transit.
+}

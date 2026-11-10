@@ -1,0 +1,16 @@
+meta {
+  name: Refresh
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/auth/refresh
+  body: none
+  auth: none
+}
+
+docs {
+  Rotates both tokens using the refresh_token cookie. The previous refresh
+  token is single use. 200 -> {expires_in,user}.
+}

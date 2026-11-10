@@ -1,0 +1,15 @@
+meta {
+  name: List role policies
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/roles/{{roleId}}/policies
+  body: none
+  auth: none
+}
+
+docs {
+  SuperAdmin. 200 -> [{role_id,resource,action}].
+}

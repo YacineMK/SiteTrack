@@ -1,0 +1,27 @@
+meta {
+  name: Update task
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/projects/{{projectId}}/tasks/{{taskId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Pour level 2 slab (north)",
+    "planned_start_date": "2026-02-01",
+    "planned_end_date": "2026-02-12"
+  }
+}
+
+docs {
+  Project member. 200 -> TaskResponse. Status is not editable here.
+}

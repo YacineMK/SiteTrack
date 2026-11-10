@@ -1,0 +1,26 @@
+meta {
+  name: Create policy
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/roles/{{roleId}}/policies
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "resource": "{{resource}}",
+    "action": "{{action}}"
+  }
+}
+
+docs {
+  SuperAdmin. resource/action must be in GET /resources. 201 -> PolicyResponse.
+}

@@ -1,0 +1,26 @@
+meta {
+  name: Add dependency
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/projects/{{projectId}}/tasks/{{taskId}}/dependencies
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "depends_on": "{{dependsOnId}}"
+  }
+}
+
+docs {
+  Makes {{taskId}} wait for {{dependsOnId}}. Same project only.
+  204. 409 if it would create a cycle or the dependency already exists.
+}

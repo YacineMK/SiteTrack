@@ -1,0 +1,16 @@
+meta {
+  name: Start task
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/projects/{{projectId}}/tasks/{{taskId}}/start
+  body: none
+  auth: none
+}
+
+docs {
+  not_started -> in_progress. 409 if any task it waits on (directly or
+  indirectly) is not done.
+}

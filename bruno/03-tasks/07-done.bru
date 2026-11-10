@@ -1,0 +1,15 @@
+meta {
+  name: Mark task done
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/projects/{{projectId}}/tasks/{{taskId}}/done
+  body: none
+  auth: none
+}
+
+docs {
+  in_progress -> done. 409 for any other source status.
+}

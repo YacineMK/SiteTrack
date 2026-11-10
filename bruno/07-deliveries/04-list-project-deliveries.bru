@@ -1,0 +1,25 @@
+meta {
+  name: List project deliveries
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/projects/{{projectId}}/deliveries
+  body: none
+  auth: none
+}
+
+params:query {
+  status:
+  direction:
+  from_date:
+  to_date:
+  after:
+  limit: 20
+}
+
+docs {
+  Project member. Incoming and outgoing deliveries for this project, newest
+  first, keyset paginated with `after`. Rows include lines and actor names.
+}

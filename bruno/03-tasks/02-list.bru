@@ -1,0 +1,30 @@
+meta {
+  name: List tasks
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/projects/{{projectId}}/tasks
+  body: none
+  auth: none
+}
+
+params:query {
+  q:
+  status:
+  from_date:
+  to_date:
+  sort: name
+  late: false
+  blocked: false
+  limit: 20
+  offset: 0
+}
+
+docs {
+  status: not_started | in_progress | done.
+  sort: name | start_date | end_date | dependents.
+  from_date/to_date filter on planned dates. Rows include late, blocked,
+  depends_on (direct) and dependents_count.
+}

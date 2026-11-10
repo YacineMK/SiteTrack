@@ -1,0 +1,16 @@
+meta {
+  name: Accept invitation
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{baseUrl}}/invitations/{{invitationId}}/accept
+  body: none
+  auth: none
+}
+
+docs {
+  Only the invited user. Joins the project (admin if the invite role was admin).
+  204. 404 if the invitation is not theirs, already answered or expired.
+}

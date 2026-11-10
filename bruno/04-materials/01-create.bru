@@ -1,0 +1,32 @@
+meta {
+  name: Create material
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/materials/
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Cement, OPC 50 kg bag",
+    "category": "binder",
+    "unit": "bag"
+  }
+}
+
+script:post-response {
+  bru.setEnvVar("materialId", res.body.id);
+}
+
+docs {
+  Catalogue is shared by every logged-in user. Name is unique (case-insensitive).
+  201 -> MaterialResponse. 409 -> duplicate name.
+}

@@ -1,0 +1,19 @@
+meta {
+  name: Email available
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/auth/email-available
+  body: none
+  auth: none
+}
+
+params:query {
+  email: {{email}}
+}
+
+docs {
+  200 {"available":true|false}. Used by the Register screen.
+}

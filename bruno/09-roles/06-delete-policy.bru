@@ -1,0 +1,15 @@
+meta {
+  name: Delete policy
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{baseUrl}}/roles/{{roleId}}/policies/{{resource}}/{{action}}
+  body: none
+  auth: none
+}
+
+docs {
+  SuperAdmin. 204. 404 if the policy does not exist.
+}

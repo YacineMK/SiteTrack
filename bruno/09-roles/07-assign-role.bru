@@ -1,0 +1,26 @@
+meta {
+  name: Assign user role
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{baseUrl}}/users/{{memberUserId}}/role
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "role": "company_store_manager"
+  }
+}
+
+docs {
+  SuperAdmin. 200 -> AssignedUserResponse. The new role applies on the user's
+  next request (role is re-read from the database).
+}

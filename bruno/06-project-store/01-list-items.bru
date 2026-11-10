@@ -1,0 +1,24 @@
+meta {
+  name: List project store
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/projects/{{projectId}}/store/items
+  body: none
+  auth: none
+}
+
+params:query {
+  q:
+  category:
+  sort: name
+  limit: 20
+  offset: 0
+}
+
+docs {
+  Project member. Every material in the project store with quantity, unit and
+  last delivery date. sort: name | quantity | last_delivery.
+}

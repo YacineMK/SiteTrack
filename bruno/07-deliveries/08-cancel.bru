@@ -1,0 +1,16 @@
+meta {
+  name: Cancel delivery
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/deliveries/{{deliveryId}}/cancel
+  body: none
+  auth: none
+}
+
+docs {
+  Sender only. in_transit -> cancelled; quantities return to the sender.
+  409 if not in transit.
+}

@@ -1,0 +1,16 @@
+meta {
+  name: Get delivery
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/deliveries/{{deliveryId}}
+  body: none
+  auth: none
+}
+
+docs {
+  Sender, receiver, company store manager or SuperAdmin. 200 -> DeliveryResponse
+  with lines. 404 if the caller is not a party to it.
+}

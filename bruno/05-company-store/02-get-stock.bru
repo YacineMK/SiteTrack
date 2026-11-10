@@ -1,0 +1,15 @@
+meta {
+  name: Get stock item
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/company-store/stock/{{materialId}}
+  body: none
+  auth: none
+}
+
+docs {
+  200 -> StockResponse. 404 if the material is unknown.
+}

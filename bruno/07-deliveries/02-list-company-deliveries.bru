@@ -1,0 +1,29 @@
+meta {
+  name: List company deliveries
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/company-store/deliveries
+  body: none
+  auth: none
+}
+
+params:query {
+  status:
+  direction:
+  from_date:
+  to_date:
+  project:
+  after:
+  limit: 20
+}
+
+docs {
+  Company store manager or SuperAdmin. Newest first, keyset paginated:
+  pass the last item's id as `after` for the next page.
+  status: in_transit | delivered | rejected | cancelled.
+  direction: in | out (relative to the company store).
+  Rows include lines, project display IDs and actor names.
+}

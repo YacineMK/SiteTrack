@@ -1,0 +1,15 @@
+meta {
+  name: Get project
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/projects/{{projectId}}
+  body: none
+  auth: none
+}
+
+docs {
+  200 -> ProjectResponse. Non-members receive 404 (never confirms the ID exists).
+}

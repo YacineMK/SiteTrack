@@ -1,0 +1,16 @@
+meta {
+  name: Logout
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/auth/logout
+  body: none
+  auth: none
+}
+
+docs {
+  Revokes both tokens (Redis jti blacklist) and clears cookies.
+  204. The session stops working on the very next request.
+}

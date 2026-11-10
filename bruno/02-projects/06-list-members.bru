@@ -1,0 +1,15 @@
+meta {
+  name: List members
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/projects/{{projectId}}/members
+  body: none
+  auth: none
+}
+
+docs {
+  200 -> {items:[{user_id,name,email,is_admin,created_at}],total}.
+}

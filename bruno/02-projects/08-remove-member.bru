@@ -1,0 +1,16 @@
+meta {
+  name: Remove member
+  type: http
+  seq: 8
+}
+
+delete {
+  url: {{baseUrl}}/projects/{{projectId}}/members/{{memberUserId}}
+  body: none
+  auth: none
+}
+
+docs {
+  Project admin only. 204. Access is revoked on the member's very next request.
+  409 if it would remove the last admin.
+}
