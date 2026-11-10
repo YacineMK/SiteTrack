@@ -8,16 +8,12 @@ import (
 	"github.com/google/uuid"
 
 	jsonutil "github.com/YacineMK/SiteTrack/kit/json"
+	"github.com/YacineMK/SiteTrack/kit/reqctx"
 )
 
 type ProjectAccess interface {
 	ProjectAccess(ctx context.Context, displayID string, userID uuid.UUID) (uuid.UUID, bool, bool, bool, error)
 }
-
-const (
-	projectIDKey    contextKey = "project_id"
-	projectAdminKey contextKey = "project_admin"
-)
 
 func RequireProjectMember(access ProjectAccess) func(http.Handler) http.Handler {
 	return requireProject(access, false)
@@ -30,7 +26,7 @@ func RequireProjectAdmin(access ProjectAccess) func(http.Handler) http.Handler {
 func requireProject(access ProjectAccess, adminOnly bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			userID, ok := UserID(r.Context())
+			userID, ok := reqctx.UserID(r.Context())
 			if !ok {
 				jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
 				return
@@ -51,7 +47,7 @@ func requireProject(access ProjectAccess, adminOnly bool) func(http.Handler) htt
 				return
 			}
 
-			role, _ := AppRole(r.Context())
+			role, _ := reqctx.AppRole(r.Context())
 			superAdmin := role == "super_admin"
 			if !superAdmin && !member {
 				jsonutil.Error(w, http.StatusNotFound, "project not found")
@@ -62,19 +58,7 @@ func requireProject(access ProjectAccess, adminOnly bool) func(http.Handler) htt
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), projectIDKey, projectID)
-			ctx = context.WithValue(ctx, projectAdminKey, isAdmin || superAdmin)
-			next.ServeHTTP(w, r.WithContext(ctx))
+			next.ServeHTTP(w, r.WithContext(reqctx.WithProject(r.Context(), projectID, isAdmin || superAdmin)))
 		})
 	}
-}
-
-func ProjectID(ctx context.Context) (uuid.UUID, bool) {
-	id, ok := ctx.Value(projectIDKey).(uuid.UUID)
-	return id, ok
-}
-
-func ProjectAdmin(ctx context.Context) (bool, bool) {
-	admin, ok := ctx.Value(projectAdminKey).(bool)
-	return admin, ok
 }

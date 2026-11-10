@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/YacineMK/SiteTrack/internal/middleware"
+	"github.com/YacineMK/SiteTrack/kit/reqctx"
 	jsonutil "github.com/YacineMK/SiteTrack/kit/json"
 )
 
@@ -23,7 +24,7 @@ func NewHandler(svc Service, checker middleware.PolicyChecker, access middleware
 }
 
 func (h *Handler) createCompany(w http.ResponseWriter, r *http.Request) {
-	actorID, ok := middleware.UserID(r.Context())
+	actorID, ok := reqctx.UserID(r.Context())
 	if !ok {
 		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
@@ -45,7 +46,7 @@ func (h *Handler) createCompany(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) createProject(w http.ResponseWriter, r *http.Request) {
-	actorID, ok := middleware.UserID(r.Context())
+	actorID, ok := reqctx.UserID(r.Context())
 	if !ok {
 		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
@@ -163,11 +164,11 @@ func (h *Handler) cancel(w http.ResponseWriter, r *http.Request) {
 }
 
 func deliveryActor(r *http.Request) (uuid.UUID, string, bool) {
-	userID, ok := middleware.UserID(r.Context())
+	userID, ok := reqctx.UserID(r.Context())
 	if !ok {
 		return uuid.UUID{}, "", false
 	}
-	role, _ := middleware.AppRole(r.Context())
+	role, _ := reqctx.AppRole(r.Context())
 	return userID, role, true
 }
 
