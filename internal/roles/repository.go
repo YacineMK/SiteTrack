@@ -71,7 +71,7 @@ func (r *PostgresRepository) CreateRole(ctx context.Context, name, description s
 		}
 		return Role{}, err
 	}
-	return toRole(row), nil
+	return Role{ID: row.ID, Name: row.Name, Description: row.Description}, nil
 }
 
 func (r *PostgresRepository) ListRoles(ctx context.Context) ([]Role, error) {
@@ -82,7 +82,7 @@ func (r *PostgresRepository) ListRoles(ctx context.Context) ([]Role, error) {
 
 	roles := make([]Role, 0, len(rows))
 	for _, row := range rows {
-		roles = append(roles, toRole(row))
+		roles = append(roles, Role{ID: row.ID, Name: row.Name, Description: row.Description})
 	}
 	return roles, nil
 }
@@ -95,7 +95,7 @@ func (r *PostgresRepository) GetRole(ctx context.Context, id uuid.UUID) (Role, e
 		}
 		return Role{}, err
 	}
-	return toRole(row), nil
+	return Role{ID: row.ID, Name: row.Name, Description: row.Description}, nil
 }
 
 func (r *PostgresRepository) AddPolicy(ctx context.Context, roleID uuid.UUID, resource, action string) error {
@@ -146,7 +146,7 @@ func (r *PostgresRepository) GetRoleByName(ctx context.Context, name string) (Ro
 		}
 		return Role{}, err
 	}
-	return toRole(row), nil
+	return Role{ID: row.ID, Name: row.Name, Description: row.Description}, nil
 }
 
 func (r *PostgresRepository) AssignRole(ctx context.Context, userID uuid.UUID, roleName string) (UserRole, error) {
@@ -178,7 +178,7 @@ func (r *PostgresRepository) AssignRole(ctx context.Context, userID uuid.UUID, r
 	}, nil
 }
 
-func (r *PostgresRepository) toRoleFromRow(row sqlc.AppRole) Role {
+func (r *PostgresRepository) toRoleFromRow(row sqlc.Role) Role {
 	return Role{ID: row.ID, Name: row.Name, Description: row.Description}
 }
 
@@ -195,13 +195,6 @@ func (r *PostgresRepository) HasPolicy(ctx context.Context, role, resource, acti
 	return rbac.Allows(result, resource, action), nil
 }
 
-func toRole(row sqlc.AppRole) Role {
-	return Role{
-		ID:          row.ID,
-		Name:        row.Name,
-		Description: row.Description,
-	}
-}
 
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError

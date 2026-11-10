@@ -34,7 +34,8 @@ WITH visible AS (
                 ELSE round(p.task_count_done * 100.0
                      / (p.task_count_not_started + p.task_count_in_progress + p.task_count_done), 2) END::float8 AS progress,
            EXISTS (SELECT 1 FROM project_members pm
-                   WHERE pm.project_id = p.id AND pm.user_id = sqlc.arg(user_id) AND pm.is_admin) AS is_admin
+                   JOIN roles r ON r.id = pm.role_id
+                   WHERE pm.project_id = p.id AND pm.user_id = sqlc.arg(user_id) AND r.is_admin) AS is_admin
     FROM projects p
     WHERE (sqlc.arg(super_admin)::bool
            OR EXISTS (SELECT 1 FROM project_members pm
@@ -66,31 +67,54 @@ WHERE (sqlc.arg(super_admin)::bool
             AND ((t.status='not_started' AND t.planned_start_date < CURRENT_DATE)
               OR (t.status='in_progress' AND t.planned_end_date   < CURRENT_DATE))));
 
+-- Assign by role_id (admin or member role selected by caller).
 -- name: AddProjectMember :exec
-INSERT INTO project_members (project_id, user_id, is_admin) VALUES ($1, $2, $3);
+INSERT INTO project_members (project_id, user_id, role_id) VALUES ($1, $2, $3);
 
 -- name: AddProjectMemberIfAbsent :exec
-INSERT INTO project_members (project_id, user_id, is_admin) VALUES ($1, $2, $3)
+INSERT INTO project_members (project_id, user_id, role_id) VALUES ($1, $2, $3)
 ON CONFLICT (project_id, user_id) DO NOTHING;
 
 -- name: GetProjectMembership :one
-SELECT is_admin FROM project_members WHERE project_id = $1 AND user_id = $2;
+SELECT r.is_admin FROM project_members pm
+JOIN roles r ON r.id = pm.role_id
+WHERE pm.project_id = $1 AND pm.user_id = $2;
 
 -- name: ListProjectMembers :many
-SELECT pm.user_id, u.name, u.email, pm.is_admin, pm.created_at
+SELECT pm.user_id, u.name, u.email, r.id AS role_id, r.name AS role_name, r.is_admin, pm.created_at
 FROM project_members pm
 JOIN users u ON u.id = pm.user_id
+JOIN roles r ON r.id = pm.role_id
 WHERE pm.project_id = $1
 ORDER BY pm.created_at, u.name;
 
--- name: SetProjectMemberAdmin :execrows
-UPDATE project_members SET is_admin = $3 WHERE project_id = $1 AND user_id = $2;
+-- name: SetProjectMemberRole :execrows
+UPDATE project_members SET role_id = $3 WHERE project_id = $1 AND user_id = $2;
 
 -- name: RemoveProjectMember :execrows
 DELETE FROM project_members WHERE project_id = $1 AND user_id = $2;
 
 -- name: LockProjectAdmins :many
-SELECT user_id FROM project_members WHERE project_id = $1 AND is_admin FOR UPDATE;
+SELECT pm.user_id FROM project_members pm
+JOIN roles r ON r.id = pm.role_id
+WHERE pm.project_id = $1 AND r.is_admin
+FOR UPDATE;
+
+-- name: GetProjectSystemRole :one
+SELECT id FROM roles WHERE project_id = sqlc.arg(project_id)::uuid AND is_system AND name = sqlc.arg(name);
+
+-- name: SeedProjectSystemRoles :exec
+WITH new_roles AS (
+    INSERT INTO roles (id, name, description, project_id, is_admin, is_system)
+    VALUES (gen_random_uuid(), 'Admin',  'Project admin',  sqlc.arg(project_id)::uuid, TRUE,  TRUE),
+           (gen_random_uuid(), 'Member', 'Project member', sqlc.arg(project_id)::uuid, FALSE, TRUE)
+    RETURNING id, name
+)
+INSERT INTO role_policies (role_id, resource, action)
+SELECT n.id, res, 'write'
+FROM new_roles n
+CROSS JOIN (VALUES ('tasks'),('store'),('deliveries')) AS t(res)
+WHERE n.name = 'Member';
 
 -- name: FindUserByEmail :one
 SELECT id, name, email FROM users WHERE email = $1;

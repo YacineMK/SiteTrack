@@ -30,14 +30,14 @@ func (q *Queries) AddRolePolicy(ctx context.Context, arg AddRolePolicyParams) er
 const assignUserRole = `-- name: AssignUserRole :one
 WITH updated AS (
     UPDATE users
-    SET role_id = (SELECT app_roles.id FROM app_roles WHERE app_roles.name = $1),
+    SET role_id = (SELECT roles.id FROM roles WHERE roles.name = $1 AND roles.project_id IS NULL),
         updated_at = NOW()
     WHERE users.id = $2
     RETURNING id, name, email, role_id, created_at, updated_at
 )
-SELECT u.id, u.name, u.email, ar.name AS app_role, u.created_at, u.updated_at
+SELECT u.id, u.name, u.email, r.name AS app_role, u.created_at, u.updated_at
 FROM updated u
-JOIN app_roles ar ON ar.id = u.role_id
+JOIN roles r ON r.id = u.role_id
 `
 
 type AssignUserRoleParams struct {
@@ -69,7 +69,8 @@ func (q *Queries) AssignUserRole(ctx context.Context, arg AssignUserRoleParams) 
 }
 
 const createRole = `-- name: CreateRole :one
-INSERT INTO app_roles (name, description) VALUES ($1, $2)
+
+INSERT INTO roles (name, description) VALUES ($1, $2)
 RETURNING id, name, description
 `
 
@@ -78,9 +79,16 @@ type CreateRoleParams struct {
 	Description string
 }
 
-func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (AppRole, error) {
+type CreateRoleRow struct {
+	ID          uuid.UUID
+	Name        string
+	Description string
+}
+
+// All queries here read/write app-scope rows only (roles.project_id IS NULL).
+func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (CreateRoleRow, error) {
 	row := q.db.QueryRow(ctx, createRole, arg.Name, arg.Description)
-	var i AppRole
+	var i CreateRoleRow
 	err := row.Scan(&i.ID, &i.Name, &i.Description)
 	return i, err
 }
@@ -106,8 +114,8 @@ func (q *Queries) DeleteRolePolicy(ctx context.Context, arg DeleteRolePolicyPara
 const getPoliciesByRoleName = `-- name: GetPoliciesByRoleName :many
 SELECT rp.resource, rp.action
 FROM role_policies rp
-JOIN app_roles ar ON ar.id = rp.role_id
-WHERE ar.name = $1
+JOIN roles r ON r.id = rp.role_id
+WHERE r.name = $1 AND r.project_id IS NULL
 `
 
 type GetPoliciesByRoleNameRow struct {
@@ -136,23 +144,35 @@ func (q *Queries) GetPoliciesByRoleName(ctx context.Context, name string) ([]Get
 }
 
 const getRoleByID = `-- name: GetRoleByID :one
-SELECT id, name, description FROM app_roles WHERE id = $1
+SELECT id, name, description FROM roles WHERE id = $1 AND project_id IS NULL
 `
 
-func (q *Queries) GetRoleByID(ctx context.Context, id uuid.UUID) (AppRole, error) {
+type GetRoleByIDRow struct {
+	ID          uuid.UUID
+	Name        string
+	Description string
+}
+
+func (q *Queries) GetRoleByID(ctx context.Context, id uuid.UUID) (GetRoleByIDRow, error) {
 	row := q.db.QueryRow(ctx, getRoleByID, id)
-	var i AppRole
+	var i GetRoleByIDRow
 	err := row.Scan(&i.ID, &i.Name, &i.Description)
 	return i, err
 }
 
 const getRoleByName = `-- name: GetRoleByName :one
-SELECT id, name, description FROM app_roles WHERE name = $1
+SELECT id, name, description FROM roles WHERE name = $1 AND project_id IS NULL
 `
 
-func (q *Queries) GetRoleByName(ctx context.Context, name string) (AppRole, error) {
+type GetRoleByNameRow struct {
+	ID          uuid.UUID
+	Name        string
+	Description string
+}
+
+func (q *Queries) GetRoleByName(ctx context.Context, name string) (GetRoleByNameRow, error) {
 	row := q.db.QueryRow(ctx, getRoleByName, name)
-	var i AppRole
+	var i GetRoleByNameRow
 	err := row.Scan(&i.ID, &i.Name, &i.Description)
 	return i, err
 }
@@ -183,18 +203,24 @@ func (q *Queries) ListRolePolicies(ctx context.Context, roleID uuid.UUID) ([]Rol
 }
 
 const listRoles = `-- name: ListRoles :many
-SELECT id, name, description FROM app_roles ORDER BY name
+SELECT id, name, description FROM roles WHERE project_id IS NULL ORDER BY name
 `
 
-func (q *Queries) ListRoles(ctx context.Context) ([]AppRole, error) {
+type ListRolesRow struct {
+	ID          uuid.UUID
+	Name        string
+	Description string
+}
+
+func (q *Queries) ListRoles(ctx context.Context) ([]ListRolesRow, error) {
 	rows, err := q.db.Query(ctx, listRoles)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []AppRole{}
+	items := []ListRolesRow{}
 	for rows.Next() {
-		var i AppRole
+		var i ListRolesRow
 		if err := rows.Scan(&i.ID, &i.Name, &i.Description); err != nil {
 			return nil, err
 		}
@@ -208,7 +234,7 @@ func (q *Queries) ListRoles(ctx context.Context) ([]AppRole, error) {
 
 const upsertRolePolicy = `-- name: UpsertRolePolicy :exec
 INSERT INTO role_policies (role_id, resource, action)
-SELECT ar.id, $2, $3 FROM app_roles ar WHERE ar.name = $1
+SELECT r.id, $2, $3 FROM roles r WHERE r.name = $1 AND r.project_id IS NULL
 ON CONFLICT DO NOTHING
 `
 

@@ -139,6 +139,16 @@ func (r *PostgresRepository) Create(ctx context.Context, project Project, adminI
 			return err
 		}
 
+		if err := queries.SeedProjectSystemRoles(ctx, row.ID); err != nil {
+			return err
+		}
+		adminRoleID, err := queries.GetProjectSystemRole(ctx, sqlc.GetProjectSystemRoleParams{
+			ProjectID: row.ID, Name: "Admin",
+		})
+		if err != nil {
+			return err
+		}
+
 		project = Project{
 			ID: row.ID, DisplayID: row.DisplayID, Name: row.Name, Description: row.Description,
 			PlannedStartDate: row.PlannedStartDate, PlannedEndDate: row.PlannedEndDate,
@@ -147,7 +157,7 @@ func (r *PostgresRepository) Create(ctx context.Context, project Project, adminI
 		return queries.AddProjectMember(ctx, sqlc.AddProjectMemberParams{
 			ProjectID: project.ID,
 			UserID:    adminID,
-			IsAdmin:   true,
+			RoleID:    adminRoleID,
 		})
 	})
 	if err != nil {
@@ -298,10 +308,21 @@ func (r *PostgresRepository) SetMemberAdmin(ctx context.Context, projectID, user
 			}
 		}
 
-		rows, err := queries.SetProjectMemberAdmin(ctx, sqlc.SetProjectMemberAdminParams{
+		roleName := "Member"
+		if isAdmin {
+			roleName = "Admin"
+		}
+		roleID, err := queries.GetProjectSystemRole(ctx, sqlc.GetProjectSystemRoleParams{
+			ProjectID: projectID, Name: roleName,
+		})
+		if err != nil {
+			return err
+		}
+
+		rows, err := queries.SetProjectMemberRole(ctx, sqlc.SetProjectMemberRoleParams{
 			ProjectID: projectID,
 			UserID:    userID,
-			IsAdmin:   isAdmin,
+			RoleID:    roleID,
 		})
 		if err != nil {
 			return err
@@ -457,10 +478,20 @@ func (r *PostgresRepository) AcceptInvitation(ctx context.Context, id, projectID
 			return ErrInviteNotFound
 		}
 
+		roleName := "Member"
+		if isAdmin {
+			roleName = "Admin"
+		}
+		roleID, err := queries.GetProjectSystemRole(ctx, sqlc.GetProjectSystemRoleParams{
+			ProjectID: projectID, Name: roleName,
+		})
+		if err != nil {
+			return err
+		}
 		if err := queries.AddProjectMemberIfAbsent(ctx, sqlc.AddProjectMemberIfAbsentParams{
 			ProjectID: projectID,
 			UserID:    userID,
-			IsAdmin:   isAdmin,
+			RoleID:    roleID,
 		}); err != nil {
 			return err
 		}

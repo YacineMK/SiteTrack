@@ -99,12 +99,6 @@ func (ns NullDeliveryStatus) Value() (driver.Value, error) {
 	return string(ns.DeliveryStatus), nil
 }
 
-type AppRole struct {
-	ID          uuid.UUID
-	Name        string
-	Description string
-}
-
 type CompanyStoreStock struct {
 	MaterialID   uuid.UUID
 	Quantity     float64
@@ -189,8 +183,8 @@ type ProjectIDCounter struct {
 type ProjectMember struct {
 	ProjectID uuid.UUID
 	UserID    uuid.UUID
-	IsAdmin   bool
 	CreatedAt time.Time
+	RoleID    uuid.UUID
 }
 
 type ProjectStoreStock struct {
@@ -198,6 +192,16 @@ type ProjectStoreStock struct {
 	MaterialID uuid.UUID
 	Quantity   float64
 	UpdatedAt  time.Time
+}
+
+type Role struct {
+	ID          uuid.UUID
+	Name        string
+	Description string
+	ProjectID   pgtype.UUID
+	IsAdmin     bool
+	IsSystem    bool
+	UpdatedAt   time.Time
 }
 
 type RolePolicy struct {
