@@ -108,7 +108,6 @@ type Repository interface {
 	FindUserByEmail(ctx context.Context, email string) (Invitee, error)
 	CreateInvitationNotification(ctx context.Context, notification InvitationNotification, events []OutboxEvent) error
 	GetInvitationNotification(ctx context.Context, id uuid.UUID) (Invitation, error)
-	LockInvitationNotification(ctx context.Context, id uuid.UUID) (Invitation, error)
 	DeleteInvitationNotification(ctx context.Context, id uuid.UUID) (int64, error)
 	MarkInvitationRead(ctx context.Context, id, userID uuid.UUID) (int64, error)
 	AcceptInvitation(ctx context.Context, id, projectID, userID uuid.UUID, isAdmin bool) error
@@ -416,17 +415,6 @@ func (r *PostgresRepository) CreateInvitationNotification(ctx context.Context, n
 
 func (r *PostgresRepository) GetInvitationNotification(ctx context.Context, id uuid.UUID) (Invitation, error) {
 	row, err := r.queries.GetNotification(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Invitation{}, ErrInviteNotFound
-		}
-		return Invitation{}, err
-	}
-	return toInvitation(row), nil
-}
-
-func (r *PostgresRepository) LockInvitationNotification(ctx context.Context, id uuid.UUID) (Invitation, error) {
-	row, err := r.queries.LockNotification(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Invitation{}, ErrInviteNotFound
