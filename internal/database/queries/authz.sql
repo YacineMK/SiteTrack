@@ -17,10 +17,6 @@ FROM role_policies rp
 JOIN app_roles ar ON ar.id = rp.role_id
 WHERE ar.name = $1;
 
--- name: UpsertRole :exec
-INSERT INTO app_roles (name, description) VALUES ($1, $2)
-ON CONFLICT (name) DO NOTHING;
-
 -- name: UpsertRolePolicy :exec
 INSERT INTO role_policies (role_id, resource, action)
 SELECT ar.id, $2, $3 FROM app_roles ar WHERE ar.name = $1

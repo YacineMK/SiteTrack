@@ -206,21 +206,6 @@ func (q *Queries) ListRoles(ctx context.Context) ([]AppRole, error) {
 	return items, nil
 }
 
-const upsertRole = `-- name: UpsertRole :exec
-INSERT INTO app_roles (name, description) VALUES ($1, $2)
-ON CONFLICT (name) DO NOTHING
-`
-
-type UpsertRoleParams struct {
-	Name        string
-	Description string
-}
-
-func (q *Queries) UpsertRole(ctx context.Context, arg UpsertRoleParams) error {
-	_, err := q.db.Exec(ctx, upsertRole, arg.Name, arg.Description)
-	return err
-}
-
 const upsertRolePolicy = `-- name: UpsertRolePolicy :exec
 INSERT INTO role_policies (role_id, resource, action)
 SELECT ar.id, $2, $3 FROM app_roles ar WHERE ar.name = $1

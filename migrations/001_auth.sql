@@ -24,6 +24,11 @@ CREATE TABLE users (
 
 CREATE INDEX users_role_idx ON users (role_id);
 
+INSERT INTO app_roles (name, description) VALUES
+    ('user',                  'Only the projects they are a member of'),
+    ('company_store_manager', 'User permissions plus the company store'),
+    ('super_admin',           'Every project and the company store');
+
 -- migrate:down
 DROP TABLE users;
 DROP TABLE role_policies;

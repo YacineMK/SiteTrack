@@ -91,6 +91,8 @@ func (utils) WriteServiceError(w http.ResponseWriter, err error) {
 		jsonutil.Error(w, http.StatusNotFound, "user not found")
 	case errors.Is(err, ErrAlreadyMember):
 		jsonutil.Error(w, http.StatusConflict, "user is already a member")
+	case errors.Is(err, ErrProjectInUse):
+		jsonutil.Error(w, http.StatusConflict, "project has deliveries")
 	default:
 		jsonutil.Error(w, http.StatusInternalServerError, "internal server error")
 	}
