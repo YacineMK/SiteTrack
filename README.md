@@ -38,28 +38,124 @@ Health check: `curl http://localhost:8080/health`.
 
 ## System overview
 
+### High level
+
 ```mermaid
 flowchart LR
-    Client[Frontend / Bruno] -- cookies --> API
-    subgraph app["API (cmd/api)"]
-        API[chi router + middleware]
-        Worker[Outbox worker]
-    end
-    API --> PG[(Postgres)]
-    API --> Redis[(Redis)]
+    Browser["Frontend / Bruno"]
+    API["API chi router + middleware"]
+    Worker["Outbox worker"]
+    Asynq_Srv["Asynq server"]
+    SSE["SSE hub"]
+    PG[("Postgres")]
+    Redis[("Redis")]
+    Resend["Resend"]
+
+    Browser -->|cookies| API
+    API --> PG
+    API --> Redis
+    API --> Worker
     Worker --> PG
-    Worker --> Redis
-    Worker --> Asynq[(asynq queue)]
-    Asynq --> Email[Resend]
-    Worker --> SSE[SSE hub]
-    SSE -. event-stream .-> Client
+    Worker --> Asynq_Srv
+    Asynq_Srv --> Redis
+    Asynq_Srv --> Resend
+    Asynq_Srv --> SSE
+    SSE -.->|event-stream| Browser
 ```
 
-A single process runs the HTTP API, the outbox dispatcher, and the Asynq
-worker (`cmd/api/main.go`). Postgres is the source of truth. Redis holds
-session jti blacklist, ID-generator cursors, invite TTL keys, and the
-Asynq queue. Emails leave through Resend. Real-time notifications are
-delivered via SSE (`/notifications/stream`) from an in-process hub.
+### Request pipeline
+
+Every request walks the same middleware chain before a handler runs:
+
+```mermaid
+flowchart LR
+    Req["HTTPS request"]
+    RL["RateLimit per IP<br/>60 / 10s (5 / 10s on /auth)"]
+    Auth["Authenticate<br/>parse JWT · jti blacklist · reload user"]
+    Policy["RequireAppPolicy<br/>role to policy check"]
+    Project["RequireProjectMember / Admin<br/>404 if not a member"]
+    Handler["Handler + sqlc queries"]
+    DB[("Postgres")]
+    RD[("Redis")]
+
+    Req --> RL --> Auth --> Policy --> Project --> Handler --> DB
+    Auth --> RD
+```
+
+1. `RateLimit` buckets by canonical client IP.
+2. `Authenticate` parses the access-token cookie, checks the jti
+   blacklist in Redis, reloads the user from Postgres so a fresh
+   `app_role` is used on every request.
+3. `RequireAppPolicy` checks `role_policies` for app-level actions
+   (company store, materials, roles…).
+4. `RequireProjectMember` / `RequireProjectAdmin` reads
+   `project_members` and returns **404** (not 403) if the caller is not
+   a member. SuperAdmin bypasses.
+5. The handler runs its service layer; writes go through `sqlc`
+   against `pgxpool`.
+
+### Notification + email write path
+
+```mermaid
+sequenceDiagram
+    participant H as Handler (invite)
+    participant TX as Postgres tx
+    participant W as Outbox worker
+    participant Q as Asynq (Redis)
+    participant S as SSE hub
+    participant R as Resend
+    participant F as Frontend
+
+    H->>TX: INSERT notification
+    H->>TX: INSERT outbox app_notification
+    H->>TX: INSERT outbox email
+    H->>TX: COMMIT
+    loop every OUTBOX_POLL_INTERVAL
+        W->>TX: UPDATE outbox FOR UPDATE SKIP LOCKED
+        W->>Q: enqueue (task id = outbox.id)
+    end
+    Q-->>S: app_notification handler
+    S-->>F: event-stream push
+    Q-->>R: email handler
+    R-->>Q: 200 OK
+    Q->>TX: mark outbox done
+```
+
+The DB transaction is the single source of truth. Redis or Resend can
+fail — the outbox worker retries with exponential backoff
+(`OUTBOX_MAX_ATTEMPTS`). Nothing is lost, nothing is duplicated (the
+Asynq task id is `outbox.id`).
+
+### ID generation path (`PRJ-0001`, `PRJ-0001-T-0001`)
+
+```mermaid
+sequenceDiagram
+    participant H as Handler
+    participant R as Redis Lua
+    participant DB as Postgres counter row
+
+    H->>R: EVAL incr script
+    alt cursor hot in Redis
+        R-->>H: next = N + 1
+    else first use or restart
+        R->>DB: SELECT last_value FOR UPDATE
+        DB-->>R: last_value
+        R-->>H: next = last_value + 1
+    end
+    H->>DB: INSERT row (UUID v7 + display_id)
+    H->>DB: UPDATE counter last_value = next
+```
+
+UUID v7 is the primary key everywhere (timestamp-ordered,
+index-friendly). Display IDs come from a Lua-scripted Redis counter
+with a Postgres floor, so two parallel create requests cannot collide.
+
+A single process runs the HTTP API, the outbox dispatcher, and the
+Asynq server (`cmd/api/main.go`). Postgres is the source of truth.
+Redis holds session jti blacklist, ID-generator cursors, invite TTL
+keys, and the Asynq queue. Emails leave through Resend. Real-time
+notifications are delivered via SSE (`/notifications/stream`) from an
+in-process hub.
 
 ---
 
@@ -67,23 +163,25 @@ delivered via SSE (`/notifications/stream`) from an in-process hub.
 
 ```mermaid
 erDiagram
-    app_roles        ||--o{ role_policies    : ""
-    app_roles        ||--o{ users            : ""
-    users            ||--o{ project_members  : ""
-    users            ||--o{ notifications    : ""
-    projects         ||--o{ project_members  : ""
-    projects         ||--o{ tasks            : ""
-    projects         ||--o{ project_store_stock : ""
-    projects         ||--o{ deliveries       : "sender / receiver"
-    project_id_counter ||--|| projects       : ""
-    task_id_counter  ||--|| projects         : ""
-    tasks            ||--o{ task_dependencies: "task_id / depends_on"
-    materials        ||--o{ company_store_stock: ""
-    materials        ||--o{ project_store_stock: ""
-    materials        ||--o{ delivery_lines   : ""
-    deliveries       ||--o{ delivery_lines   : ""
-    outbox           }o..o{ notifications    : "worker"
+    app_roles ||--o{ role_policies : grants
+    app_roles ||--o{ users : "assigned to"
+    users ||--o{ project_members : joins
+    users ||--o{ notifications : receives
+    projects ||--o{ project_members : has
+    projects ||--o{ tasks : contains
+    projects ||--o{ project_store_stock : stores
+    projects ||--o{ deliveries : "sender or receiver"
+    task_id_counter ||--|| projects : "per-project"
+    tasks ||--o{ task_dependencies : "waits on"
+    materials ||--o{ company_store_stock : has
+    materials ||--o{ project_store_stock : has
+    materials ||--o{ delivery_lines : moved
+    deliveries ||--o{ delivery_lines : lines
 ```
+
+`outbox` is intentionally not linked: it mirrors `notifications` and
+email jobs but does not reference them with a foreign key (it's the
+durable work queue picked up by the background worker).
 
 Five migrations, one concern per file:
 
@@ -253,4 +351,3 @@ The collection is organized by domain: `01-auth`, `02-projects`,
 `07-deliveries`, `08-notifications`, `09-roles`. Request sequences
 matter inside each folder.
 
-g
