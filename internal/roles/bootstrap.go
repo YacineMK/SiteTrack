@@ -8,17 +8,6 @@ import (
 	"github.com/YacineMK/SiteTrack/internal/database/sqlc"
 )
 
-type defaultRole struct {
-	name        string
-	description string
-}
-
-var defaultRoles = []defaultRole{
-	{name: "user", description: "Can only access projects they are a member of"},
-	{name: "company_store_manager", description: "User permissions plus full access to company store"},
-	{name: "super_admin", description: "Full access to all projects and company store"},
-}
-
 type defaultPolicy struct {
 	role     string
 	resource string
@@ -53,15 +42,6 @@ var defaultPolicies = []defaultPolicy{
 
 func Bootstrap(ctx context.Context, db *pgxpool.Pool) error {
 	queries := sqlc.New(db)
-
-	for _, role := range defaultRoles {
-		if err := queries.UpsertRole(ctx, sqlc.UpsertRoleParams{
-			Name:        role.name,
-			Description: role.description,
-		}); err != nil {
-			return err
-		}
-	}
 
 	for _, policy := range defaultPolicies {
 		if err := queries.UpsertRolePolicy(ctx, sqlc.UpsertRolePolicyParams{

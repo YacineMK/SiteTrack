@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/YacineMK/SiteTrack/internal/database/sqlc"
@@ -21,6 +22,7 @@ var (
 	ErrInviteExpired   = errors.New("invitation expired")
 	ErrInviteeNotFound = errors.New("user not found")
 	ErrAlreadyMember   = errors.New("user is already a member")
+	ErrProjectInUse    = errors.New("project has deliveries")
 )
 
 type Project struct {
@@ -235,7 +237,15 @@ func (r *PostgresRepository) Update(ctx context.Context, displayID, name, descri
 }
 
 func (r *PostgresRepository) Delete(ctx context.Context, displayID string) (int64, error) {
-	return r.queries.DeleteProject(ctx, displayID)
+	rows, err := r.queries.DeleteProject(ctx, displayID)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			return 0, ErrProjectInUse
+		}
+		return 0, err
+	}
+	return rows, nil
 }
 
 func (r *PostgresRepository) ProjectAccess(ctx context.Context, displayID string, userID uuid.UUID) (uuid.UUID, bool, bool, bool, error) {

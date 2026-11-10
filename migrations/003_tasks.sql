@@ -25,9 +25,6 @@ CREATE INDEX tasks_project_end_idx     ON tasks (project_id, planned_end_date, i
 CREATE INDEX tasks_project_deps_idx    ON tasks (project_id, dependents_count DESC, id);
 CREATE INDEX tasks_project_status_idx  ON tasks (project_id, status);
 CREATE INDEX tasks_project_blocked_idx ON tasks (project_id) WHERE blocked;
-CREATE INDEX tasks_project_late_idx    ON tasks (project_id)
-    WHERE (status = 'not_started' AND planned_start_date < CURRENT_DATE)
-       OR (status = 'in_progress' AND planned_end_date < CURRENT_DATE);
 
 CREATE TABLE task_dependencies (
     task_id    UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
