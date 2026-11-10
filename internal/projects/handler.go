@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/YacineMK/SiteTrack/internal/middleware"
+	"github.com/YacineMK/SiteTrack/kit/reqctx"
 	jsonutil "github.com/YacineMK/SiteTrack/kit/json"
 )
 
@@ -22,7 +23,7 @@ func NewHandler(svc Service, access middleware.ProjectAccess) *Handler {
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserID(r.Context())
+	userID, ok := reqctx.UserID(r.Context())
 	if !ok {
 		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
@@ -49,12 +50,12 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, ok := middleware.UserID(r.Context())
+	userID, ok := reqctx.UserID(r.Context())
 	if !ok {
 		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	role, _ := middleware.AppRole(r.Context())
+	role, _ := reqctx.AppRole(r.Context())
 	q := r.URL.Query()
 
 	projects, err := h.svc.List(r.Context(), ListParams{
@@ -72,7 +73,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
-	isAdmin, _ := middleware.ProjectAdmin(r.Context())
+	isAdmin, _ := reqctx.IsProjectAdmin(r.Context())
 
 	project, err := h.svc.Get(r.Context(), chi.URLParam(r, "display_id"), isAdmin)
 	if err != nil {
@@ -90,7 +91,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isAdmin, _ := middleware.ProjectAdmin(r.Context())
+	isAdmin, _ := reqctx.IsProjectAdmin(r.Context())
 
 	project, err := h.svc.Update(r.Context(), chi.URLParam(r, "display_id"), isAdmin, req)
 	if err != nil {
@@ -111,7 +112,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listMembers(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := middleware.ProjectID(r.Context())
+	projectID, ok := reqctx.ProjectID(r.Context())
 	if !ok {
 		jsonutil.Error(w, http.StatusNotFound, "project not found")
 		return
@@ -127,7 +128,7 @@ func (h *Handler) listMembers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) updateMember(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := middleware.ProjectID(r.Context())
+	projectID, ok := reqctx.ProjectID(r.Context())
 	if !ok {
 		jsonutil.Error(w, http.StatusNotFound, "project not found")
 		return
@@ -154,7 +155,7 @@ func (h *Handler) updateMember(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := middleware.ProjectID(r.Context())
+	projectID, ok := reqctx.ProjectID(r.Context())
 	if !ok {
 		jsonutil.Error(w, http.StatusNotFound, "project not found")
 		return
@@ -175,12 +176,12 @@ func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) invite(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := middleware.ProjectID(r.Context())
+	projectID, ok := reqctx.ProjectID(r.Context())
 	if !ok {
 		jsonutil.Error(w, http.StatusNotFound, "project not found")
 		return
 	}
-	actorID, ok := middleware.UserID(r.Context())
+	actorID, ok := reqctx.UserID(r.Context())
 	if !ok {
 		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
@@ -202,7 +203,7 @@ func (h *Handler) invite(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) withdrawInvitation(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := middleware.ProjectID(r.Context())
+	projectID, ok := reqctx.ProjectID(r.Context())
 	if !ok {
 		jsonutil.Error(w, http.StatusNotFound, "project not found")
 		return
@@ -223,7 +224,7 @@ func (h *Handler) withdrawInvitation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) acceptInvitation(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserID(r.Context())
+	userID, ok := reqctx.UserID(r.Context())
 	if !ok {
 		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
@@ -244,7 +245,7 @@ func (h *Handler) acceptInvitation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) rejectInvitation(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserID(r.Context())
+	userID, ok := reqctx.UserID(r.Context())
 	if !ok {
 		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return

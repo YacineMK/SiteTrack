@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/YacineMK/SiteTrack/internal/middleware"
+	"github.com/YacineMK/SiteTrack/kit/reqctx"
 	jsonutil "github.com/YacineMK/SiteTrack/kit/json"
 )
 
@@ -131,7 +132,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserID(r.Context())
+	userID, ok := reqctx.UserID(r.Context())
 	if !ok {
 		h.utils.WriteUnauthorized(w)
 		return
