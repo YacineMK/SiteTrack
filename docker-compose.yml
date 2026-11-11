@@ -88,16 +88,16 @@ services:
   # UI: http://localhost:3301
   signoz-zookeeper:
     profiles: ["signoz"]
-    image: bitnami/zookeeper:3.7.1
+    image: zookeeper:3.8
     container_name: signoz-zookeeper
     hostname: zookeeper-1
-    user: root
     environment:
-      - ZOO_SERVER_ID=1
-      - ALLOW_ANONYMOUS_LOGIN=yes
-      - ZOO_AUTOPURGE_INTERVAL=1
+      - ZOO_MY_ID=1
+      - ZOO_SERVERS=server.1=0.0.0.0:2888:3888;2181
+      - ZOO_AUTOPURGE_PURGEINTERVAL=1
+      - ZOO_4LW_COMMANDS_WHITELIST=*
     volumes:
-      - signoz_zookeeper:/bitnami/zookeeper
+      - signoz_zookeeper:/data
     networks:
       - sitetrack
 

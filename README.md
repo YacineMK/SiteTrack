@@ -32,7 +32,42 @@ docker compose -f docker-compose.dev.yml up -d postgres redis
 go run ./cmd/api
 ```
 
-Health check: `curl http://localhost:8080/health`.
+Health check: `curl http://localhost:8080/health` — pings Postgres and Redis
+in parallel. Returns `200` with `{"status":"ok","postgres":{"status":"ok"},"redis":{"status":"ok"}}`
+when both are reachable, `503` with per-dep status when either is down.
+Suitable as a load-balancer readiness probe.
+
+---
+
+## Observability (SigNoz)
+
+The API is instrumented with OpenTelemetry. HTTP spans come from
+`otelchi`, database spans from `otelpgx`, and both ship over OTLP gRPC to
+whatever collector `OTEL_EXPORTER_OTLP_ENDPOINT` points at. Leave the env
+unset to run with telemetry off — the SDK no-ops.
+
+A self-hosted SigNoz stack is bundled behind a compose profile:
+
+```bash
+docker compose --profile signoz up -d
+```
+
+That brings up zookeeper, ClickHouse, the SigNoz schema migrator, the
+`signoz-otel-collector` on `:4317`/`:4318`, the query service, the
+alertmanager, and the SigNoz frontend on `http://localhost:3301`. The app
+in the same compose exports to `signoz-otel-collector:4317` by default,
+so traces flow the moment both stacks are up.
+
+Dev setup (API on host, deps + SigNoz in containers):
+
+```bash
+docker compose -f docker-compose.dev.yml --profile signoz up -d
+OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317 go run ./cmd/api
+```
+
+Vendored configs live in `monitoring/signoz/` (pinned to SigNoz v0.49,
+otel-collector 0.102). They are copied unmodified from SigNoz's upstream
+compose so an update is a straight file-level diff.
 
 ---
 
