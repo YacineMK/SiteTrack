@@ -23,5 +23,8 @@ JOIN roles r ON r.id = u.role_id;
 -- name: EmailExists :one
 SELECT EXISTS(SELECT 1 FROM users WHERE email = $1);
 
+-- name: ListAllEmails :many
+SELECT email FROM users;
+
 -- name: RoleExists :one
 SELECT EXISTS(SELECT 1 FROM roles WHERE name = $1 AND project_id IS NULL);

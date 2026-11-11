@@ -1,6 +1,9 @@
 package auth
 
 import (
+	"context"
+	"log"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -22,7 +25,11 @@ type Module struct {
 
 func New(deps Dependencies) *Module {
 	repo := NewPostgresRepository(deps.DB)
-	svc := NewService(repo, deps.JWT, NewRedisBlacklist(deps.Redis))
+	emailBloom := NewEmailBloom()
+	if err := emailBloom.Warm(context.Background(), repo); err != nil {
+		log.Printf("auth: email bloom warm failed: %v", err)
+	}
+	svc := NewService(repo, deps.JWT, NewRedisBlacklist(deps.Redis), emailBloom)
 	return &Module{
 		handler: NewHandler(svc, deps.CookieSecure),
 		svc:     svc,
