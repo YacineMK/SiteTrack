@@ -19,6 +19,7 @@ import (
 	"github.com/YacineMK/SiteTrack/internal/worker"
 	"github.com/YacineMK/SiteTrack/kit/config"
 	kitjwt "github.com/YacineMK/SiteTrack/kit/jwt"
+	"github.com/YacineMK/SiteTrack/kit/observability"
 	kitredis "github.com/YacineMK/SiteTrack/kit/redis"
 	kitresend "github.com/YacineMK/SiteTrack/kit/resend"
 )
@@ -28,6 +29,16 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	shutdownOtel, err := observability.Setup(ctx, "sitetrack-api", os.Getenv("APP_ENV"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownOtel(shutdownCtx)
+	}()
 
 	postgres, err := database.NewPostgres(ctx, cfg.DatabaseURL, database.PoolConfig{
 		MaxConns:        cfg.DBMaxConns,
