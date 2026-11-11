@@ -100,7 +100,7 @@ services:
     profiles: ["signoz"]
     image: signoz/signoz-otel-collector:0.102.1
     container_name: signoz-otel-collector
-    hostname: signoz-otel-collector
+    hostname: otel-collector
     user: root
     command:
       - "--config=/etc/otel-collector-config.yaml"
@@ -132,13 +132,14 @@ services:
     profiles: ["signoz"]
     image: signoz/query-service:0.49.0
     container_name: signoz-query-service
+    hostname: query-service
     command: ["-config=/root/config/prometheus.yml"]
     volumes:
       - ./monitoring/signoz/prometheus.yml:/root/config/prometheus.yml
       - signoz_query:/var/lib/signoz/
     environment:
       - ClickHouseUrl=tcp://clickhouse:9000
-      - ALERTMANAGER_API_PREFIX=http://signoz-alertmanager:9093/api/
+      - ALERTMANAGER_API_PREFIX=http://alertmanager:9093/api/
       - SIGNOZ_LOCAL_DB_PATH=/var/lib/signoz/signoz.db
       - STORAGE=clickhouse
       - GODEBUG=netdns=go
@@ -162,10 +163,11 @@ services:
     profiles: ["signoz"]
     image: signoz/alertmanager:0.23.5
     container_name: signoz-alertmanager
+    hostname: alertmanager
     volumes:
       - signoz_alertmanager:/data
     command:
-      - --queryService.url=http://signoz-query-service:8085
+      - --queryService.url=http://query-service:8085
       - --storage.path=/data
     depends_on:
       signoz-query-service:
