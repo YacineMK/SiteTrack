@@ -11,19 +11,32 @@ Go 1.26 · PostgreSQL 17 · Redis 7 · one `docker compose up` to run.
 
 ## Run it
 
+Five steps on a clean machine:
+
 ```bash
+# 1. clone + copy the env template
 cp .env.example .env
-# put your Resend API key (only required for outbound invitation emails):
-# RESEND_API_KEY=re_xxx
-docker compose up
-```
 
-That starts Postgres, Redis, runs the migrations, and starts the API on
-`:8080`. The seed container is a `--profile seed` opt-in:
+# 2. put your own Resend API key in .env so invitation emails go out.
+#    Grab a free key at https://resend.com/api-keys, then:
+#      RESEND_API_KEY=re_xxx
+#    Every other var in .env.example already works out of the box.
 
-```bash
+# 3. bring up Postgres, Redis, run migrations, start the API on :8080
+docker compose up -d
+
+# 4. (optional) load the full spec-scale dataset
+#    5k users, 2k projects, 500k tasks, 1M deps, 20k materials, 400k deliveries
 docker compose --profile seed run --rm seed
+
+# 5. (optional) bring up SigNoz on :3301 to monitor the API
+docker compose --profile signoz up -d
 ```
+
+Health check: `curl http://localhost:8080/health` — pings Postgres and Redis
+in parallel. Returns `200` with `{"status":"ok","postgres":{"status":"ok"},"redis":{"status":"ok"}}`
+when both are reachable, `503` with per-dep status when either is down.
+Suitable as a load-balancer readiness probe.
 
 Dev loop (Postgres + Redis in containers, API on the host):
 
@@ -31,11 +44,6 @@ Dev loop (Postgres + Redis in containers, API on the host):
 docker compose -f docker-compose.dev.yml up -d postgres redis
 go run ./cmd/api
 ```
-
-Health check: `curl http://localhost:8080/health` — pings Postgres and Redis
-in parallel. Returns `200` with `{"status":"ok","postgres":{"status":"ok"},"redis":{"status":"ok"}}`
-when both are reachable, `503` with per-dep status when either is down.
-Suitable as a load-balancer readiness probe.
 
 ---
 
@@ -55,8 +63,21 @@ docker compose --profile signoz up -d
 That brings up zookeeper, ClickHouse, the SigNoz schema migrator, the
 `signoz-otel-collector` on `:4317`/`:4318`, the query service, the
 alertmanager, and the SigNoz frontend on `http://localhost:3301`. The app
-in the same compose exports to `signoz-otel-collector:4317` by default,
-so traces flow the moment both stacks are up.
+in the same compose exports to `otel-collector:4317` by default, so
+traces flow the moment both stacks are up.
+
+### Logging in to SigNoz
+
+SigNoz Community Edition has no seeded user and no shared default
+credentials. The first person who opens `http://localhost:3301/signup`
+creates the admin account for this deployment — pick any name, email and
+password. After that first signup the instance is locked: additional
+users have to be invited from **Settings → Team Members**, so the review
+reviewer and your teammates each get their own account.
+
+To verify traces are landing, send a few requests to the API and look
+under **Services → sitetrack-api** in the SigNoz UI. HTTP routes come from
+`otelchi`, SQL spans from `otelpgx`.
 
 Dev setup (API on host, deps + SigNoz in containers):
 
