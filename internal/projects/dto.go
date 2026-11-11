@@ -90,14 +90,13 @@ func (r UpdateMemberRequest) Validate() error {
 }
 
 type InviteRequest struct {
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	Email  string    `json:"email"`
+	RoleID uuid.UUID `json:"role_id"` // must belong to this project; omit for default Member
 }
 
 func (r InviteRequest) Validate() error {
 	return validation.ValidateStruct(&r,
 		validation.Field(&r.Email, validation.Required, is.Email),
-		validation.Field(&r.Role, validation.Required, validation.In("member", "admin")),
 	)
 }
 
@@ -107,6 +106,8 @@ type InvitationResponse struct {
 	InviteeID        uuid.UUID `json:"invitee_id"`
 	Name             string    `json:"name"`
 	Email            string    `json:"email"`
+	RoleID           uuid.UUID `json:"role_id"`
+	RoleName         string    `json:"role_name"`
 	Status           string    `json:"status"`
 	ExpiresAt        time.Time `json:"expires_at"`
 	CreatedAt        time.Time `json:"created_at"`

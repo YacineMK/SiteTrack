@@ -29,6 +29,7 @@ type Service interface {
 	WithdrawInvitation(ctx context.Context, projectID, notificationID uuid.UUID) error
 	AcceptInvitation(ctx context.Context, userID, notificationID uuid.UUID) error
 	RejectInvitation(ctx context.Context, userID, notificationID uuid.UUID) error
+	ListPendingInvitations(ctx context.Context, projectID uuid.UUID, projectDisplayID string) ([]InvitationResponse, error)
 }
 
 type service struct {
@@ -166,15 +167,34 @@ func (s *service) RemoveMember(ctx context.Context, projectID, userID uuid.UUID)
 type inviteData struct {
 	ProjectID        string    `json:"project_id"`
 	ProjectDisplayID string    `json:"project_display_id"`
-	Role             string    `json:"role"`
+	RoleID           string    `json:"role_id"`
+	RoleName         string    `json:"role_name"`
 	ExpiresAt        time.Time `json:"expires_at"`
 }
 
 func (s *service) Invite(ctx context.Context, projectID uuid.UUID, projectDisplayID string, inviterID uuid.UUID, req InviteRequest) (InvitationResponse, error) {
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
-	req.Role = strings.TrimSpace(req.Role)
 	if err := req.Validate(); err != nil {
 		return InvitationResponse{}, ErrInvalidInput
+	}
+
+	// Belt-and-braces: route is guarded by RequireProjectAdmin but reverify here.
+	_, inviterIsAdmin, err := s.repo.Membership(ctx, projectID, inviterID)
+	if err != nil {
+		return InvitationResponse{}, err
+	}
+	if !inviterIsAdmin {
+		return InvitationResponse{}, ErrInvalidInput
+	}
+
+	var role ProjectRole
+	if req.RoleID == uuid.Nil {
+		role, err = s.repo.DefaultMemberRole(ctx, projectID)
+	} else {
+		role, err = s.repo.GetProjectRole(ctx, projectID, req.RoleID)
+	}
+	if err != nil {
+		return InvitationResponse{}, err
 	}
 
 	invitee, err := s.repo.FindUserByEmail(ctx, req.Email)
@@ -218,7 +238,8 @@ func (s *service) Invite(ctx context.Context, projectID uuid.UUID, projectDispla
 	data, err := json.Marshal(inviteData{
 		ProjectID:        projectID.String(),
 		ProjectDisplayID: projectDisplayID,
-		Role:             req.Role,
+		RoleID:           role.ID.String(),
+		RoleName:         role.Name,
 		ExpiresAt:        expiresAt,
 	})
 	if err != nil {
@@ -237,8 +258,8 @@ func (s *service) Invite(ctx context.Context, projectID uuid.UUID, projectDispla
 		"outbox_id": emailOutboxID.String(),
 		"user_id":   invitee.ID.String(),
 		"subject":   "Project invitation",
-		"text":      fmt.Sprintf("You have been invited to project %s as %s. Accept or reject: %s", projectDisplayID, req.Role, link),
-		"html":      fmt.Sprintf("<p>You have been invited to project <strong>%s</strong> as <strong>%s</strong>.</p><p><a href=\"%s\">Accept or reject</a></p>", projectDisplayID, req.Role, link),
+		"text":      fmt.Sprintf("You have been invited to project %s as %s. Accept or reject: %s", projectDisplayID, role.Name, link),
+		"html":      fmt.Sprintf("<p>You have been invited to project <strong>%s</strong> as <strong>%s</strong>.</p><p><a href=\"%s\">Accept or reject</a></p>", projectDisplayID, role.Name, link),
 	})
 	if err != nil {
 		return InvitationResponse{}, err
@@ -249,7 +270,7 @@ func (s *service) Invite(ctx context.Context, projectID uuid.UUID, projectDispla
 		UserID: invitee.ID,
 		Type:   "app_invite",
 		Title:  "Project invitation",
-		Body:   fmt.Sprintf("You have been invited to project %s as %s", projectDisplayID, req.Role),
+		Body:   fmt.Sprintf("You have been invited to project %s as %s", projectDisplayID, role.Name),
 		Data:   data,
 	}, []OutboxEvent{
 		{ID: appOutboxID, Kind: "app_notification", Payload: appPayload},
@@ -269,6 +290,8 @@ func (s *service) Invite(ctx context.Context, projectID uuid.UUID, projectDispla
 		InviteeID:        invitee.ID,
 		Name:             invitee.Name,
 		Email:            invitee.Email,
+		RoleID:           role.ID,
+		RoleName:         role.Name,
 		Status:           "pending",
 		ExpiresAt:        expiresAt,
 		CreatedAt:        time.Now(),
@@ -311,31 +334,51 @@ func (s *service) AcceptInvitation(ctx context.Context, userID, notificationID u
 	if err != nil {
 		return ErrInviteNotFound
 	}
+	roleID, err := uuid.Parse(data.RoleID)
+	if err != nil {
+		return ErrInviteNotFound
+	}
 
-	if err := s.repo.AcceptInvitation(ctx, notificationID, projectID, userID, data.Role == "admin"); err != nil {
+	// One-time use: GETDEL atomically claims the "invite:<id>" key. If someone
+	// else already accepted/rejected/withdrew, this returns empty and we 404.
+	claimed, err := s.redis.Client.GetDel(ctx, "invite:"+notificationID.String()).Result()
+	if err != nil && err.Error() != "redis: nil" {
+		return err
+	}
+	if claimed == "" {
+		return ErrInviteNotFound
+	}
+
+	if err := s.repo.AcceptInvitationWithRole(ctx, notificationID, projectID, userID, roleID); err != nil {
+		// Give the one-shot back if the DB rejected us, so a retry can work.
+		s.redis.Client.Set(ctx, "invite:"+notificationID.String(), claimed, time.Until(data.ExpiresAt))
 		return err
 	}
 
-	s.redis.Client.Del(ctx, "invite:"+invitation.ID.String())
 	s.redis.Client.Del(ctx, fmt.Sprintf("invite:pending:%s:%s", data.ProjectID, userID))
+	_ = invitation
 	return nil
 }
 
 func (s *service) RejectInvitation(ctx context.Context, userID, notificationID uuid.UUID) error {
-	invitation, data, err := s.pendingInvitation(ctx, userID, notificationID)
+	_, data, err := s.pendingInvitation(ctx, userID, notificationID)
 	if err != nil {
 		return err
 	}
 
-	rows, err := s.repo.RejectInvitation(ctx, notificationID, userID)
-	if err != nil {
+	claimed, err := s.redis.Client.GetDel(ctx, "invite:"+notificationID.String()).Result()
+	if err != nil && err.Error() != "redis: nil" {
 		return err
 	}
-	if rows == 0 {
+	if claimed == "" {
 		return ErrInviteNotFound
 	}
 
-	s.redis.Client.Del(ctx, "invite:"+invitation.ID.String())
+	if _, err := s.repo.RejectInvitation(ctx, notificationID, userID); err != nil {
+		s.redis.Client.Set(ctx, "invite:"+notificationID.String(), claimed, time.Until(data.ExpiresAt))
+		return err
+	}
+
 	s.redis.Client.Del(ctx, fmt.Sprintf("invite:pending:%s:%s", data.ProjectID, userID))
 	return nil
 }
@@ -384,6 +427,35 @@ func (s *service) pendingInvitation(ctx context.Context, userID, notificationID 
 		return Invitation{}, inviteData{}, ErrInviteExpired
 	}
 	return invitation, data, nil
+}
+
+func (s *service) ListPendingInvitations(ctx context.Context, projectID uuid.UUID, projectDisplayID string) ([]InvitationResponse, error) {
+	rows, err := s.repo.ListProjectPendingInvitations(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]InvitationResponse, 0, len(rows))
+	for _, row := range rows {
+		var data inviteData
+		_ = json.Unmarshal(row.Data, &data)
+		var roleID uuid.UUID
+		if id, err := uuid.Parse(data.RoleID); err == nil {
+			roleID = id
+		}
+		out = append(out, InvitationResponse{
+			ID:               row.ID,
+			ProjectDisplayID: projectDisplayID,
+			InviteeID:        row.UserID,
+			Name:             row.Name,
+			Email:            row.Email,
+			RoleID:           roleID,
+			RoleName:         data.RoleName,
+			Status:           "pending",
+			ExpiresAt:        data.ExpiresAt,
+			CreatedAt:        row.CreatedAt,
+		})
+	}
+	return out, nil
 }
 
 func parseDates(start, end string) (time.Time, time.Time, error) {

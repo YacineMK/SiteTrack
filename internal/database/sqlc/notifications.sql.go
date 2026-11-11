@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -140,6 +141,53 @@ func (q *Queries) ListNotifications(ctx context.Context, arg ListNotificationsPa
 			&i.Body,
 			&i.Data,
 			&i.ReadAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectPendingInvitations = `-- name: ListProjectPendingInvitations :many
+SELECT n.id, n.user_id, u.name, u.email, n.data, n.created_at
+FROM notifications n
+JOIN users u ON u.id = n.user_id
+WHERE n.type = 'app_invite'
+  AND n.read_at IS NULL
+  AND n.data->>'project_id' = $1::text
+ORDER BY n.created_at DESC
+`
+
+type ListProjectPendingInvitationsRow struct {
+	ID        uuid.UUID
+	UserID    uuid.UUID
+	Name      string
+	Email     string
+	Data      []byte
+	CreatedAt time.Time
+}
+
+// Pending (unanswered) invitations for a project. data.project_id is a uuid string.
+func (q *Queries) ListProjectPendingInvitations(ctx context.Context, projectID string) ([]ListProjectPendingInvitationsRow, error) {
+	rows, err := q.db.Query(ctx, listProjectPendingInvitations, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectPendingInvitationsRow{}
+	for rows.Next() {
+		var i ListProjectPendingInvitationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Name,
+			&i.Email,
+			&i.Data,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

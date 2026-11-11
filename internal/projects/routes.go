@@ -20,6 +20,7 @@ func (h *Handler) Routes(r chi.Router) {
 		r.With(admin).Patch("/{display_id}/members/{user_id}", h.updateMember)
 		r.With(admin).Delete("/{display_id}/members/{user_id}", h.removeMember)
 		r.With(admin).Post("/{display_id}/invitations", h.invite)
+		r.With(admin).Get("/{display_id}/invitations", h.listInvitations)
 		r.With(admin).Delete("/{display_id}/invitations/{invitation_id}", h.withdrawInvitation)
 	})
 
