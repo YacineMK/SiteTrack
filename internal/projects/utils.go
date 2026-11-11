@@ -60,13 +60,7 @@ func (u utils) ListResponse(projects []Project, total int64, limit int32) ListPr
 func (utils) MembersResponse(members []Member) ListMembersResponse {
 	items := make([]MemberResponse, 0, len(members))
 	for _, member := range members {
-		items = append(items, MemberResponse{
-			UserID:    member.UserID,
-			Name:      member.Name,
-			Email:     member.Email,
-			IsAdmin:   member.IsAdmin,
-			CreatedAt: member.CreatedAt,
-		})
+		items = append(items, MemberResponse(member))
 	}
 	return ListMembersResponse{Items: items, Total: int64(len(items))}
 }

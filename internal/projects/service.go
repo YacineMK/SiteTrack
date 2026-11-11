@@ -462,17 +462,3 @@ func (s *service) ListPendingInvitations(ctx context.Context, projectID uuid.UUI
 	}
 	return out, nil
 }
-
-func parseDates(start, end string) (time.Time, time.Time, error) {
-	startDate, err := time.Parse(dateLayout, start)
-	if err != nil {
-		return time.Time{}, time.Time{}, ErrInvalidInput
-	}
-
-	endDate, err := time.Parse(dateLayout, end)
-	if err != nil || endDate.Before(startDate) {
-		return time.Time{}, time.Time{}, ErrInvalidInput
-	}
-
-	return startDate, endDate, nil
-}
