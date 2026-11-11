@@ -32,6 +32,8 @@ type App struct {
 	authMiddleware func(http.Handler) http.Handler
 	public         []module
 	protected      []module
+	postgres       *database.Postgres
+	redis          *kitredis.Redis
 }
 
 func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtManager *kitjwt.Manager, cookieSecure bool, notificationHub *notifications.Hub, inviteTTL time.Duration, appBaseURL string) *App {
@@ -48,6 +50,8 @@ func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtMan
 	a := &App{
 		server:         server.New(addr),
 		authMiddleware: middleware.AuthenticateMiddleware(authModule.Service()),
+		postgres:       postgres,
+		redis:          redis,
 		public:         []module{authModule},
 		protected: []module{
 			materials.New(materials.Dependencies{DB: postgres.Pool}),
