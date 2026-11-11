@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -13,6 +14,23 @@ import (
 	"testing"
 	"time"
 )
+
+type invitationResp struct {
+	ID     string `json:"id"`
+	RoleID string `json:"role_id"`
+	Email  string `json:"email"`
+}
+
+type memberResp struct {
+	UserID  string `json:"user_id"`
+	Email   string `json:"email"`
+	IsAdmin bool   `json:"is_admin"`
+}
+
+type membersList struct {
+	Items []memberResp `json:"items"`
+	Total int          `json:"total"`
+}
 
 var _ = strings.HasPrefix // silence linter if helpers unused
 
@@ -124,5 +142,44 @@ func urlWithQuery(base string, params map[string]string) string {
 }
 
 func unique(prefix string) string {
-	return prefix + "-" + time.Now().Format("150405.000")
+	return prefix + "-" + time.Now().Format("150405.000000")
+}
+
+// lookupEmail returns the email bound to a logged-in client via /auth/me.
+func (c *client) lookupEmail(t *testing.T) string {
+	t.Helper()
+	var me struct {
+		Email string `json:"email"`
+	}
+	c.getJSON("/auth/me", http.StatusOK, &me)
+	return me.Email
+}
+
+// joinProject bypasses the invite flow by writing project_members directly.
+// Only used by tests that need a second member fast and don't test invites.
+func joinProject(t *testing.T, c *client, projectDisplayID string, asAdmin bool) {
+	t.Helper()
+	var me struct {
+		ID string `json:"id"`
+	}
+	c.getJSON("/auth/me", http.StatusOK, &me)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	roleName := "Member"
+	if asAdmin {
+		roleName = "Admin"
+	}
+	_, err := dbpool.Pool.Exec(ctx, `
+		INSERT INTO project_members (project_id, user_id, role_id)
+		SELECT p.id, $1::uuid, r.id
+		FROM projects p
+		JOIN roles r ON r.project_id = p.id AND r.is_system AND r.name = $2
+		WHERE p.display_id = $3
+		ON CONFLICT (project_id, user_id) DO NOTHING
+	`, me.ID, roleName, projectDisplayID)
+	if err != nil {
+		t.Fatalf("joinProject(%s, admin=%v): %v", projectDisplayID, asAdmin, err)
+	}
 }

@@ -39,7 +39,7 @@ import (
 var (
 	ts   *httptest.Server
 	cfg  config.Config
-	pool *database.Postgres
+	dbpool *database.Postgres
 )
 
 const (
@@ -131,7 +131,7 @@ func run(m *testing.M) (int, error) {
 		return 1, fmt.Errorf("pgxpool: %w", err)
 	}
 	defer pg.Close()
-	pool = pg
+	dbpool = pg
 
 	rc, err := kitredis.New(ctx, kitredis.Config{Addr: redisAddr, Password: redisPassword, PoolSize: 5})
 	if err != nil {

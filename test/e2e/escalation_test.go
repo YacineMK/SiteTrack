@@ -23,11 +23,7 @@ func TestEscalation(t *testing.T) {
 	})
 	t.Run("non-admin member cannot invite", func(t *testing.T) {
 		member := registerAndLogin(t, "esc-member", unique("em")+"@example.com", "Password123!", "user")
-		var inv invitationResp
-		admin.ok(http.MethodPost, "/projects/"+p.DisplayID+"/invitations", map[string]any{
-			"email": member.lookupEmail(t),
-		}, http.StatusCreated, &inv)
-		member.expect(http.MethodPost, "/invitations/"+inv.ID+"/accept", nil, http.StatusNoContent)
+		joinProject(t, member, p.DisplayID, false)
 		member.expect(http.MethodPost, "/projects/"+p.DisplayID+"/invitations", map[string]any{
 			"email": "someone@example.com",
 		}, http.StatusForbidden)
@@ -87,12 +83,7 @@ func TestEscalation(t *testing.T) {
 		adminB := registerAndLogin(t, "esc-adminB", unique("adminb")+"@example.com", "Password123!", "user")
 		memberB := registerAndLogin(t, "esc-memberB", unique("memberb")+"@example.com", "Password123!", "user")
 		p2 := createProject(t, adminB, unique("EscP2"))
-
-		var invB invitationResp
-		adminB.ok(http.MethodPost, "/projects/"+p2.DisplayID+"/invitations", map[string]any{
-			"email": memberB.lookupEmail(t),
-		}, http.StatusCreated, &invB)
-		memberB.expect(http.MethodPost, "/invitations/"+invB.ID+"/accept", nil, http.StatusNoContent)
+		joinProject(t, memberB, p2.DisplayID, false)
 
 		// Role from p1 (admin's project):
 		var pr roleResp
@@ -100,7 +91,8 @@ func TestEscalation(t *testing.T) {
 			"name": "Spy", "description": "cross-scope",
 		}, http.StatusCreated, &pr)
 
-		// adminB tries to PATCH member in p2 to use role from p1 — expected: 400 or 404.
+		// adminB tries to PATCH member in p2 with a role_id from p1.
+		// The handler must reject it because the role's project_id != p2.
 		var ml membersList
 		adminB.getJSON("/projects/"+p2.DisplayID+"/members", http.StatusOK, &ml)
 		var memBID string
@@ -109,11 +101,8 @@ func TestEscalation(t *testing.T) {
 				memBID = m.UserID
 			}
 		}
-		// The current API shape only allows is_admin bool; direct role_id
-		// injection isn't an API surface, so this attack reduces to asserting
-		// the handler never accepts a raw role_id from body.
 		adminB.expect(http.MethodPatch, "/projects/"+p2.DisplayID+"/members/"+memBID, map[string]any{
 			"role_id": pr.ID,
-		}, http.StatusBadRequest)
+		}, http.StatusNotFound)
 	})
 }
