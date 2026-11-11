@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/YacineMK/SiteTrack/internal/database/sqlc"
@@ -24,6 +25,7 @@ var (
 	ErrInviteeNotFound = errors.New("user not found")
 	ErrAlreadyMember   = errors.New("user is already a member")
 	ErrProjectInUse    = errors.New("project has deliveries")
+	ErrRoleNotFound    = errors.New("role not found for project")
 )
 
 type Project struct {
@@ -112,7 +114,10 @@ type Repository interface {
 	GetInvitationNotification(ctx context.Context, id uuid.UUID) (Invitation, error)
 	DeleteInvitationNotification(ctx context.Context, id uuid.UUID) (int64, error)
 	MarkInvitationRead(ctx context.Context, id, userID uuid.UUID) (int64, error)
-	AcceptInvitation(ctx context.Context, id, projectID, userID uuid.UUID, isAdmin bool) error
+	ListProjectPendingInvitations(ctx context.Context, projectID uuid.UUID) ([]PendingInvitation, error)
+	GetProjectRole(ctx context.Context, projectID, roleID uuid.UUID) (ProjectRole, error)
+	DefaultMemberRole(ctx context.Context, projectID uuid.UUID) (ProjectRole, error)
+	AcceptInvitationWithRole(ctx context.Context, id, projectID, userID, roleID uuid.UUID) error
 	RejectInvitation(ctx context.Context, id, userID uuid.UUID) (int64, error)
 }
 
@@ -485,7 +490,7 @@ func (r *PostgresRepository) MarkInvitationRead(ctx context.Context, id, userID 
 	return 1, nil
 }
 
-func (r *PostgresRepository) AcceptInvitation(ctx context.Context, id, projectID, userID uuid.UUID, isAdmin bool) error {
+func (r *PostgresRepository) AcceptInvitationWithRole(ctx context.Context, id, projectID, userID, roleID uuid.UUID) error {
 	return pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		queries := r.queries.WithTx(tx)
 
@@ -500,16 +505,16 @@ func (r *PostgresRepository) AcceptInvitation(ctx context.Context, id, projectID
 			return ErrInviteNotFound
 		}
 
-		roleName := "Member"
-		if isAdmin {
-			roleName = "Admin"
-		}
-		roleID, err := queries.GetProjectSystemRole(ctx, sqlc.GetProjectSystemRoleParams{
-			ProjectID: projectID, Name: roleName,
-		})
-		if err != nil {
+		// Re-verify role still belongs to the project (admin may have deleted it).
+		if _, err := queries.GetRoleByID(ctx, sqlc.GetRoleByIDParams{
+			ID: roleID, ProjectID: pgtype.UUID{Bytes: projectID, Valid: true},
+		}); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrInviteNotFound
+			}
 			return err
 		}
+
 		if err := queries.AddProjectMemberIfAbsent(ctx, sqlc.AddProjectMemberIfAbsentParams{
 			ProjectID: projectID,
 			UserID:    userID,
@@ -529,6 +534,60 @@ func (r *PostgresRepository) AcceptInvitation(ctx context.Context, id, projectID
 		}
 		return nil
 	})
+}
+
+type ProjectRole struct {
+	ID       uuid.UUID
+	Name     string
+	IsAdmin  bool
+	IsSystem bool
+}
+
+func (r *PostgresRepository) GetProjectRole(ctx context.Context, projectID, roleID uuid.UUID) (ProjectRole, error) {
+	row, err := r.queries.GetRoleByID(ctx, sqlc.GetRoleByIDParams{
+		ID: roleID, ProjectID: pgtype.UUID{Bytes: projectID, Valid: true},
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ProjectRole{}, ErrRoleNotFound
+		}
+		return ProjectRole{}, err
+	}
+	return ProjectRole{ID: row.ID, Name: row.Name, IsAdmin: row.IsAdmin, IsSystem: row.IsSystem}, nil
+}
+
+func (r *PostgresRepository) DefaultMemberRole(ctx context.Context, projectID uuid.UUID) (ProjectRole, error) {
+	id, err := r.queries.GetProjectSystemRole(ctx, sqlc.GetProjectSystemRoleParams{
+		ProjectID: projectID, Name: "Member",
+	})
+	if err != nil {
+		return ProjectRole{}, err
+	}
+	return ProjectRole{ID: id, Name: "Member", IsSystem: true}, nil
+}
+
+type PendingInvitation struct {
+	ID        uuid.UUID
+	UserID    uuid.UUID
+	Name      string
+	Email     string
+	Data      []byte
+	CreatedAt time.Time
+}
+
+func (r *PostgresRepository) ListProjectPendingInvitations(ctx context.Context, projectID uuid.UUID) ([]PendingInvitation, error) {
+	rows, err := r.queries.ListProjectPendingInvitations(ctx, projectID.String())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]PendingInvitation, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, PendingInvitation{
+			ID: row.ID, UserID: row.UserID, Name: row.Name, Email: row.Email,
+			Data: row.Data, CreatedAt: row.CreatedAt,
+		})
+	}
+	return out, nil
 }
 
 func (r *PostgresRepository) RejectInvitation(ctx context.Context, id, userID uuid.UUID) (int64, error) {

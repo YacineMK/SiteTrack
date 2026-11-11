@@ -202,6 +202,20 @@ func (h *Handler) invite(w http.ResponseWriter, r *http.Request) {
 	jsonutil.JSON(w, http.StatusCreated, invitation)
 }
 
+func (h *Handler) listInvitations(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := reqctx.ProjectID(r.Context())
+	if !ok {
+		jsonutil.Error(w, http.StatusNotFound, "project not found")
+		return
+	}
+	out, err := h.svc.ListPendingInvitations(r.Context(), projectID, chi.URLParam(r, "display_id"))
+	if err != nil {
+		h.utils.WriteServiceError(w, err)
+		return
+	}
+	jsonutil.JSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
 func (h *Handler) withdrawInvitation(w http.ResponseWriter, r *http.Request) {
 	projectID, ok := reqctx.ProjectID(r.Context())
 	if !ok {
