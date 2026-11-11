@@ -24,14 +24,7 @@ func NewUtils() Utils {
 }
 
 func (utils) ToResponse(material Material) MaterialResponse {
-	return MaterialResponse{
-		ID:        material.ID,
-		Name:      material.Name,
-		Category:  material.Category,
-		Unit:      material.Unit,
-		CreatedAt: material.CreatedAt,
-		UpdatedAt: material.UpdatedAt,
-	}
+	return MaterialResponse(material)
 }
 
 func (u utils) ListResponse(materials []Material, total int64, limit, offset int32) ListMaterialsResponse {

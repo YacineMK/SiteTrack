@@ -159,12 +159,5 @@ func (s *service) AssignRole(ctx context.Context, userID uuid.UUID, req AssignRo
 		return AssignedUserResponse{}, err
 	}
 
-	return AssignedUserResponse{
-		ID:        user.ID,
-		Name:      user.Name,
-		Email:     user.Email,
-		AppRole:   user.AppRole,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
-	}, nil
+	return AssignedUserResponse(user), nil
 }

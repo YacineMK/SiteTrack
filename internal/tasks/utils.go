@@ -54,12 +54,7 @@ func (u utils) ToDetailResponse(task Task, projectDisplayID string, upstream, do
 func (utils) dependencies(deps []Dependency) []DependencyResponse {
 	items := make([]DependencyResponse, 0, len(deps))
 	for _, dep := range deps {
-		items = append(items, DependencyResponse{
-			DisplayID: dep.DisplayID,
-			Name:      dep.Name,
-			Status:    dep.Status,
-			Steps:     dep.Steps,
-		})
+		items = append(items, DependencyResponse(dep))
 	}
 	return items
 }

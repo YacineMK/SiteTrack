@@ -27,12 +27,7 @@ func NewUtils() Utils {
 func (u utils) ToResponse(delivery Delivery) DeliveryResponse {
 	lines := make([]DeliveryLineResponse, 0, len(delivery.Lines))
 	for _, line := range delivery.Lines {
-		lines = append(lines, DeliveryLineResponse{
-			MaterialID: line.MaterialID,
-			Name:       line.Name,
-			Unit:       line.Unit,
-			Quantity:   line.Quantity,
-		})
+		lines = append(lines, DeliveryLineResponse(line))
 	}
 
 	return DeliveryResponse{
