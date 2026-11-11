@@ -107,12 +107,8 @@ func TestRolesProjectScope(t *testing.T) {
 		}, http.StatusCreated)
 	})
 
-	// Invite+accept the assignee, then switch their role via member PATCH.
-	var inv invitationResp
-	admin.ok(http.MethodPost, "/projects/"+p.DisplayID+"/invitations", map[string]any{
-		"email": assignee.lookupEmail(t),
-	}, http.StatusCreated, &inv)
-	assignee.expect(http.MethodPost, "/invitations/"+inv.ID+"/accept", nil, http.StatusNoContent)
+	// Shortcut: join directly for authz checks; invite flow has its own tests.
+	joinProject(t, assignee, p.DisplayID, false)
 
 	t.Run("deleting a system role is rejected", func(t *testing.T) {
 		var rl roleList
