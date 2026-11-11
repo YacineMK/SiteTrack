@@ -84,14 +84,41 @@ func (s *service) Update(ctx context.Context, id string, req UpdateMaterialReque
 		return MaterialResponse{}, err
 	}
 
-	req.Name = strings.TrimSpace(req.Name)
-	req.Category = strings.TrimSpace(req.Category)
-	req.Unit = strings.TrimSpace(req.Unit)
+	if req.Name != nil {
+		trimmed := strings.TrimSpace(*req.Name)
+		req.Name = &trimmed
+	}
+	if req.Category != nil {
+		trimmed := strings.TrimSpace(*req.Category)
+		req.Category = &trimmed
+	}
+	if req.Unit != nil {
+		trimmed := strings.TrimSpace(*req.Unit)
+		req.Unit = &trimmed
+	}
 	if err := req.Validate(); err != nil {
 		return MaterialResponse{}, ErrInvalidInput
 	}
 
-	material, err := s.repo.Update(ctx, materialID, req.Name, req.Category, req.Unit)
+	existing, err := s.repo.Get(ctx, materialID)
+	if err != nil {
+		return MaterialResponse{}, err
+	}
+
+	name := existing.Name
+	if req.Name != nil {
+		name = *req.Name
+	}
+	category := existing.Category
+	if req.Category != nil {
+		category = *req.Category
+	}
+	unit := existing.Unit
+	if req.Unit != nil {
+		unit = *req.Unit
+	}
+
+	material, err := s.repo.Update(ctx, materialID, name, category, unit)
 	if err != nil {
 		return MaterialResponse{}, err
 	}
