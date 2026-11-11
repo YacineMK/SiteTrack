@@ -1,5 +1,5 @@
 meta {
-  name: Set member admin
+  name: Set member role
   type: http
   seq: 7
 }
@@ -16,10 +16,12 @@ headers {
 
 body:json {
   {
-    "is_admin": true
+    "role_id": "{{projectRoleId}}"
   }
 }
 
 docs {
-  Project admin only. 204. 409 if it would remove the last admin.
+  Project admin only. role_id must belong to this project (or be a system
+  project role). 204. 404 if the role is not in this project's scope.
+  409 if it would remove the last admin.
 }
