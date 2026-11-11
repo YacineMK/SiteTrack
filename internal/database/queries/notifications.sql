@@ -36,3 +36,13 @@ FOR UPDATE;
 
 -- name: DeleteNotification :execrows
 DELETE FROM notifications WHERE id = $1;
+
+-- Pending (unanswered) invitations for a project. data.project_id is a uuid string.
+-- name: ListProjectPendingInvitations :many
+SELECT n.id, n.user_id, u.name, u.email, n.data, n.created_at
+FROM notifications n
+JOIN users u ON u.id = n.user_id
+WHERE n.type = 'app_invite'
+  AND n.read_at IS NULL
+  AND n.data->>'project_id' = sqlc.arg(project_id)::text
+ORDER BY n.created_at DESC;

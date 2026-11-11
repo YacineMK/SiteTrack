@@ -8,12 +8,14 @@ import (
 )
 
 type Dependencies struct {
-	DB *pgxpool.Pool
+	DB     *pgxpool.Pool
+	Access middleware.ProjectAccess
 }
 
 type Module struct {
 	handler *Handler
 	checker middleware.PolicyChecker
+	access  middleware.ProjectAccess
 }
 
 func New(deps Dependencies) *Module {
@@ -21,11 +23,12 @@ func New(deps Dependencies) *Module {
 	return &Module{
 		handler: NewHandler(NewService(repo), repo),
 		checker: repo,
+		access:  deps.Access,
 	}
 }
 
 func (m *Module) Routes(r chi.Router) {
-	m.handler.Routes(r)
+	m.handler.Routes(r, m.access)
 }
 
 func (m *Module) Checker() middleware.PolicyChecker {

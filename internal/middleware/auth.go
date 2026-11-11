@@ -8,6 +8,7 @@ import (
 
 	jsonutil "github.com/YacineMK/SiteTrack/kit/json"
 	kitjwt "github.com/YacineMK/SiteTrack/kit/jwt"
+	"github.com/YacineMK/SiteTrack/kit/reqctx"
 )
 
 const AccessCookieName = "access_token"
@@ -15,13 +16,6 @@ const AccessCookieName = "access_token"
 type TokenValidator interface {
 	ValidateAccessToken(ctx context.Context, token string) (*kitjwt.Claims, error)
 }
-
-type contextKey string
-
-const (
-	userIDKey  contextKey = "user_id"
-	appRoleKey contextKey = "app_role"
-)
 
 func AuthenticateMiddleware(validator TokenValidator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -44,44 +38,8 @@ func AuthenticateMiddleware(validator TokenValidator) func(http.Handler) http.Ha
 				return
 			}
 
-			ctx := WithContext(r.Context(), userID, claims.AppRole)
+			ctx := reqctx.WithAuth(r.Context(), userID, claims.AppRole)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
-}
-
-func AuthorizationMiddleware(allowedRoles ...string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			role, ok := AppRole(r.Context())
-			if !ok {
-				jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
-				return
-			}
-
-			for _, allowed := range allowedRoles {
-				if role == allowed {
-					next.ServeHTTP(w, r)
-					return
-				}
-			}
-
-			jsonutil.Error(w, http.StatusForbidden, "forbidden")
-		})
-	}
-}
-
-func WithContext(ctx context.Context, userID uuid.UUID, appRole string) context.Context {
-	ctx = context.WithValue(ctx, userIDKey, userID)
-	return context.WithValue(ctx, appRoleKey, appRole)
-}
-
-func UserID(ctx context.Context) (uuid.UUID, bool) {
-	id, ok := ctx.Value(userIDKey).(uuid.UUID)
-	return id, ok
-}
-
-func AppRole(ctx context.Context) (string, bool) {
-	role, ok := ctx.Value(appRoleKey).(string)
-	return role, ok
 }

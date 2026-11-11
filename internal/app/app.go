@@ -36,9 +36,9 @@ type App struct {
 	redis          *kitredis.Redis
 }
 
-func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtManager *kitjwt.Manager, cookieSecure bool, notificationHub *notifications.Hub, inviteTTL time.Duration, appBaseURL string) *App {
-	rolesModule := roles.New(roles.Dependencies{DB: postgres.Pool})
+func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtManager *kitjwt.Manager, cookieSecure bool, notificationHub *notifications.Hub, inviteTTL time.Duration, appBaseURL string, corsOrigins []string) *App {
 	projectsModule := projects.New(projects.Dependencies{DB: postgres.Pool, Redis: redis, InviteTTL: inviteTTL, AppBaseURL: appBaseURL})
+	rolesModule := roles.New(roles.Dependencies{DB: postgres.Pool, Access: projectsModule.Access()})
 
 	authModule := auth.New(auth.Dependencies{
 		DB:           postgres.Pool,
@@ -48,7 +48,7 @@ func New(addr string, postgres *database.Postgres, redis *kitredis.Redis, jwtMan
 	})
 
 	a := &App{
-		server:         server.New(addr),
+		server:         server.New(addr, corsOrigins),
 		authMiddleware: middleware.AuthenticateMiddleware(authModule.Service()),
 		postgres:       postgres,
 		redis:          redis,
@@ -75,4 +75,8 @@ func (a *App) Run() error {
 
 func (a *App) Shutdown(ctx context.Context) error {
 	return a.server.Shutdown(ctx)
+}
+
+func (a *App) Handler() http.Handler {
+	return a.server.Mux()
 }

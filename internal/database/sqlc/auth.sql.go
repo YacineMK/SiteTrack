@@ -15,12 +15,12 @@ import (
 const createUser = `-- name: CreateUser :one
 WITH new_user AS (
     INSERT INTO users (id, name, email, password_hash, role_id)
-    VALUES ($1, $2, $3, $4, (SELECT app_roles.id FROM app_roles WHERE app_roles.name = $5))
+    VALUES ($1, $2, $3, $4, (SELECT roles.id FROM roles WHERE roles.name = $5 AND roles.project_id IS NULL))
     RETURNING id, name, email, password_hash, role_id, created_at, updated_at
 )
-SELECT u.id, u.name, u.email, u.password_hash, ar.name AS app_role, u.created_at, u.updated_at
+SELECT u.id, u.name, u.email, u.password_hash, r.name AS app_role, u.created_at, u.updated_at
 FROM new_user u
-JOIN app_roles ar ON ar.id = u.role_id
+JOIN roles r ON r.id = u.role_id
 `
 
 type CreateUserParams struct {
@@ -74,9 +74,9 @@ func (q *Queries) EmailExists(ctx context.Context, email string) (bool, error) {
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT u.id, u.name, u.email, u.password_hash, ar.name AS app_role, u.created_at, u.updated_at
+SELECT u.id, u.name, u.email, u.password_hash, r.name AS app_role, u.created_at, u.updated_at
 FROM users u
-JOIN app_roles ar ON ar.id = u.role_id
+JOIN roles r ON r.id = u.role_id
 WHERE u.email = $1
 `
 
@@ -106,9 +106,9 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT u.id, u.name, u.email, u.password_hash, ar.name AS app_role, u.created_at, u.updated_at
+SELECT u.id, u.name, u.email, u.password_hash, r.name AS app_role, u.created_at, u.updated_at
 FROM users u
-JOIN app_roles ar ON ar.id = u.role_id
+JOIN roles r ON r.id = u.role_id
 WHERE u.id = $1
 `
 
@@ -135,4 +135,39 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const listAllEmails = `-- name: ListAllEmails :many
+SELECT email FROM users
+`
+
+func (q *Queries) ListAllEmails(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listAllEmails)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, err
+		}
+		items = append(items, email)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const roleExists = `-- name: RoleExists :one
+SELECT EXISTS(SELECT 1 FROM roles WHERE name = $1 AND project_id IS NULL)
+`
+
+func (q *Queries) RoleExists(ctx context.Context, name string) (bool, error) {
+	row := q.db.QueryRow(ctx, roleExists, name)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }

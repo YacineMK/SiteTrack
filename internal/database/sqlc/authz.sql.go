@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const addRolePolicy = `-- name: AddRolePolicy :exec
@@ -30,14 +31,14 @@ func (q *Queries) AddRolePolicy(ctx context.Context, arg AddRolePolicyParams) er
 const assignUserRole = `-- name: AssignUserRole :one
 WITH updated AS (
     UPDATE users
-    SET role_id = (SELECT app_roles.id FROM app_roles WHERE app_roles.name = $1),
+    SET role_id = (SELECT roles.id FROM roles WHERE roles.name = $1 AND roles.project_id IS NULL),
         updated_at = NOW()
     WHERE users.id = $2
     RETURNING id, name, email, role_id, created_at, updated_at
 )
-SELECT u.id, u.name, u.email, ar.name AS app_role, u.created_at, u.updated_at
+SELECT u.id, u.name, u.email, r.name AS app_role, u.created_at, u.updated_at
 FROM updated u
-JOIN app_roles ar ON ar.id = u.role_id
+JOIN roles r ON r.id = u.role_id
 `
 
 type AssignUserRoleParams struct {
@@ -69,20 +70,66 @@ func (q *Queries) AssignUserRole(ctx context.Context, arg AssignUserRoleParams) 
 }
 
 const createRole = `-- name: CreateRole :one
-INSERT INTO app_roles (name, description) VALUES ($1, $2)
-RETURNING id, name, description
+INSERT INTO roles (id, project_id, name, description, is_admin, is_system)
+VALUES (gen_random_uuid(), $4::uuid, $1, $2, $3, FALSE)
+RETURNING id, name, description, is_admin, is_system, created_at, updated_at
 `
 
 type CreateRoleParams struct {
 	Name        string
 	Description string
+	IsAdmin     bool
+	ProjectID   pgtype.UUID
 }
 
-func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (AppRole, error) {
-	row := q.db.QueryRow(ctx, createRole, arg.Name, arg.Description)
-	var i AppRole
-	err := row.Scan(&i.ID, &i.Name, &i.Description)
+type CreateRoleRow struct {
+	ID          uuid.UUID
+	Name        string
+	Description string
+	IsAdmin     bool
+	IsSystem    bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (CreateRoleRow, error) {
+	row := q.db.QueryRow(ctx, createRole,
+		arg.Name,
+		arg.Description,
+		arg.IsAdmin,
+		arg.ProjectID,
+	)
+	var i CreateRoleRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.IsAdmin,
+		&i.IsSystem,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
 	return i, err
+}
+
+const deleteRole = `-- name: DeleteRole :execrows
+DELETE FROM roles
+WHERE id = $1
+  AND project_id IS NOT DISTINCT FROM $2::uuid
+  AND NOT is_system
+`
+
+type DeleteRoleParams struct {
+	ID        uuid.UUID
+	ProjectID pgtype.UUID
+}
+
+func (q *Queries) DeleteRole(ctx context.Context, arg DeleteRoleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRole, arg.ID, arg.ProjectID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteRolePolicy = `-- name: DeleteRolePolicy :execrows
@@ -106,8 +153,8 @@ func (q *Queries) DeleteRolePolicy(ctx context.Context, arg DeleteRolePolicyPara
 const getPoliciesByRoleName = `-- name: GetPoliciesByRoleName :many
 SELECT rp.resource, rp.action
 FROM role_policies rp
-JOIN app_roles ar ON ar.id = rp.role_id
-WHERE ar.name = $1
+JOIN roles r ON r.id = rp.role_id
+WHERE r.name = $1 AND r.project_id IS NULL
 `
 
 type GetPoliciesByRoleNameRow struct {
@@ -136,24 +183,74 @@ func (q *Queries) GetPoliciesByRoleName(ctx context.Context, name string) ([]Get
 }
 
 const getRoleByID = `-- name: GetRoleByID :one
-SELECT id, name, description FROM app_roles WHERE id = $1
+SELECT id, name, description, is_admin, is_system, created_at, updated_at
+FROM roles
+WHERE id = $1 AND project_id IS NOT DISTINCT FROM $2::uuid
 `
 
-func (q *Queries) GetRoleByID(ctx context.Context, id uuid.UUID) (AppRole, error) {
-	row := q.db.QueryRow(ctx, getRoleByID, id)
-	var i AppRole
-	err := row.Scan(&i.ID, &i.Name, &i.Description)
+type GetRoleByIDParams struct {
+	ID        uuid.UUID
+	ProjectID pgtype.UUID
+}
+
+type GetRoleByIDRow struct {
+	ID          uuid.UUID
+	Name        string
+	Description string
+	IsAdmin     bool
+	IsSystem    bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (q *Queries) GetRoleByID(ctx context.Context, arg GetRoleByIDParams) (GetRoleByIDRow, error) {
+	row := q.db.QueryRow(ctx, getRoleByID, arg.ID, arg.ProjectID)
+	var i GetRoleByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.IsAdmin,
+		&i.IsSystem,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
 	return i, err
 }
 
 const getRoleByName = `-- name: GetRoleByName :one
-SELECT id, name, description FROM app_roles WHERE name = $1
+SELECT id, name, description, is_admin, is_system, created_at, updated_at
+FROM roles
+WHERE name = $1 AND project_id IS NOT DISTINCT FROM $2::uuid
 `
 
-func (q *Queries) GetRoleByName(ctx context.Context, name string) (AppRole, error) {
-	row := q.db.QueryRow(ctx, getRoleByName, name)
-	var i AppRole
-	err := row.Scan(&i.ID, &i.Name, &i.Description)
+type GetRoleByNameParams struct {
+	Name      string
+	ProjectID pgtype.UUID
+}
+
+type GetRoleByNameRow struct {
+	ID          uuid.UUID
+	Name        string
+	Description string
+	IsAdmin     bool
+	IsSystem    bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (q *Queries) GetRoleByName(ctx context.Context, arg GetRoleByNameParams) (GetRoleByNameRow, error) {
+	row := q.db.QueryRow(ctx, getRoleByName, arg.Name, arg.ProjectID)
+	var i GetRoleByNameRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.IsAdmin,
+		&i.IsSystem,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
 	return i, err
 }
 
@@ -183,19 +280,43 @@ func (q *Queries) ListRolePolicies(ctx context.Context, roleID uuid.UUID) ([]Rol
 }
 
 const listRoles = `-- name: ListRoles :many
-SELECT id, name, description FROM app_roles ORDER BY name
+
+SELECT id, name, description, is_admin, is_system, created_at, updated_at
+FROM roles
+WHERE project_id IS NOT DISTINCT FROM $1::uuid
+ORDER BY is_system DESC, name
 `
 
-func (q *Queries) ListRoles(ctx context.Context) ([]AppRole, error) {
-	rows, err := q.db.Query(ctx, listRoles)
+type ListRolesRow struct {
+	ID          uuid.UUID
+	Name        string
+	Description string
+	IsAdmin     bool
+	IsSystem    bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// Scope: pass NULL in sqlc.narg(project_id) for app-scope rows,
+// the project uuid for project-scope rows. Same table, one query per op.
+func (q *Queries) ListRoles(ctx context.Context, projectID pgtype.UUID) ([]ListRolesRow, error) {
+	rows, err := q.db.Query(ctx, listRoles, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []AppRole{}
+	items := []ListRolesRow{}
 	for rows.Next() {
-		var i AppRole
-		if err := rows.Scan(&i.ID, &i.Name, &i.Description); err != nil {
+		var i ListRolesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.IsAdmin,
+			&i.IsSystem,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -206,19 +327,49 @@ func (q *Queries) ListRoles(ctx context.Context) ([]AppRole, error) {
 	return items, nil
 }
 
-const upsertRolePolicy = `-- name: UpsertRolePolicy :exec
-INSERT INTO role_policies (role_id, resource, action)
-SELECT ar.id, $2, $3 FROM app_roles ar WHERE ar.name = $1
-ON CONFLICT DO NOTHING
+const updateRole = `-- name: UpdateRole :one
+UPDATE roles SET name = $2, description = $3, is_admin = $4, updated_at = NOW()
+WHERE id = $1
+  AND project_id IS NOT DISTINCT FROM $5::uuid
+  AND NOT is_system
+RETURNING id, name, description, is_admin, is_system, created_at, updated_at
 `
 
-type UpsertRolePolicyParams struct {
-	Name     string
-	Resource string
-	Action   string
+type UpdateRoleParams struct {
+	ID          uuid.UUID
+	Name        string
+	Description string
+	IsAdmin     bool
+	ProjectID   pgtype.UUID
 }
 
-func (q *Queries) UpsertRolePolicy(ctx context.Context, arg UpsertRolePolicyParams) error {
-	_, err := q.db.Exec(ctx, upsertRolePolicy, arg.Name, arg.Resource, arg.Action)
-	return err
+type UpdateRoleRow struct {
+	ID          uuid.UUID
+	Name        string
+	Description string
+	IsAdmin     bool
+	IsSystem    bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (q *Queries) UpdateRole(ctx context.Context, arg UpdateRoleParams) (UpdateRoleRow, error) {
+	row := q.db.QueryRow(ctx, updateRole,
+		arg.ID,
+		arg.Name,
+		arg.Description,
+		arg.IsAdmin,
+		arg.ProjectID,
+	)
+	var i UpdateRoleRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.IsAdmin,
+		&i.IsSystem,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

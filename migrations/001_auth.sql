@@ -29,6 +29,34 @@ INSERT INTO app_roles (name, description) VALUES
     ('company_store_manager', 'User permissions plus the company store'),
     ('super_admin',           'Every project and the company store');
 
+-- Seed app-scope policies (read is implied by write in the checker).
+INSERT INTO role_policies (role_id, resource, action)
+SELECT r.id, p.resource, 'write'
+FROM app_roles r
+JOIN (VALUES
+    ('user',                  'materials'),
+    ('user',                  'projects'),
+    ('user',                  'tasks'),
+    ('user',                  'project_store'),
+    ('user',                  'project_deliveries'),
+    ('company_store_manager', 'materials'),
+    ('company_store_manager', 'projects'),
+    ('company_store_manager', 'tasks'),
+    ('company_store_manager', 'project_store'),
+    ('company_store_manager', 'project_deliveries'),
+    ('company_store_manager', 'company_store'),
+    ('company_store_manager', 'company_store_deliveries'),
+    ('super_admin',           'materials'),
+    ('super_admin',           'projects'),
+    ('super_admin',           'tasks'),
+    ('super_admin',           'project_store'),
+    ('super_admin',           'project_deliveries'),
+    ('super_admin',           'company_store'),
+    ('super_admin',           'company_store_deliveries'),
+    ('super_admin',           'roles'),
+    ('super_admin',           'users')
+) AS p(role, resource) ON p.role = r.name;
+
 -- migrate:down
 DROP TABLE users;
 DROP TABLE role_policies;

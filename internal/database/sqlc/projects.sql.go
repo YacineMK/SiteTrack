@@ -10,36 +10,38 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const addProjectMember = `-- name: AddProjectMember :exec
-INSERT INTO project_members (project_id, user_id, is_admin) VALUES ($1, $2, $3)
+INSERT INTO project_members (project_id, user_id, role_id) VALUES ($1, $2, $3)
 `
 
 type AddProjectMemberParams struct {
 	ProjectID uuid.UUID
 	UserID    uuid.UUID
-	IsAdmin   bool
+	RoleID    uuid.UUID
 }
 
+// Assign by role_id (admin or member role selected by caller).
 func (q *Queries) AddProjectMember(ctx context.Context, arg AddProjectMemberParams) error {
-	_, err := q.db.Exec(ctx, addProjectMember, arg.ProjectID, arg.UserID, arg.IsAdmin)
+	_, err := q.db.Exec(ctx, addProjectMember, arg.ProjectID, arg.UserID, arg.RoleID)
 	return err
 }
 
 const addProjectMemberIfAbsent = `-- name: AddProjectMemberIfAbsent :exec
-INSERT INTO project_members (project_id, user_id, is_admin) VALUES ($1, $2, $3)
+INSERT INTO project_members (project_id, user_id, role_id) VALUES ($1, $2, $3)
 ON CONFLICT (project_id, user_id) DO NOTHING
 `
 
 type AddProjectMemberIfAbsentParams struct {
 	ProjectID uuid.UUID
 	UserID    uuid.UUID
-	IsAdmin   bool
+	RoleID    uuid.UUID
 }
 
 func (q *Queries) AddProjectMemberIfAbsent(ctx context.Context, arg AddProjectMemberIfAbsentParams) error {
-	_, err := q.db.Exec(ctx, addProjectMemberIfAbsent, arg.ProjectID, arg.UserID, arg.IsAdmin)
+	_, err := q.db.Exec(ctx, addProjectMemberIfAbsent, arg.ProjectID, arg.UserID, arg.RoleID)
 	return err
 }
 
@@ -196,8 +198,49 @@ func (q *Queries) GetProjectByDisplayID(ctx context.Context, displayID string) (
 	return i, err
 }
 
+const getProjectMemberPolicies = `-- name: GetProjectMemberPolicies :many
+SELECT rp.resource, rp.action, r.is_admin
+FROM project_members pm
+JOIN roles r ON r.id = pm.role_id
+LEFT JOIN role_policies rp ON rp.role_id = r.id
+WHERE pm.project_id = $1 AND pm.user_id = $2
+`
+
+type GetProjectMemberPoliciesParams struct {
+	ProjectID uuid.UUID
+	UserID    uuid.UUID
+}
+
+type GetProjectMemberPoliciesRow struct {
+	Resource pgtype.Text
+	Action   pgtype.Text
+	IsAdmin  bool
+}
+
+func (q *Queries) GetProjectMemberPolicies(ctx context.Context, arg GetProjectMemberPoliciesParams) ([]GetProjectMemberPoliciesRow, error) {
+	rows, err := q.db.Query(ctx, getProjectMemberPolicies, arg.ProjectID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetProjectMemberPoliciesRow{}
+	for rows.Next() {
+		var i GetProjectMemberPoliciesRow
+		if err := rows.Scan(&i.Resource, &i.Action, &i.IsAdmin); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getProjectMembership = `-- name: GetProjectMembership :one
-SELECT is_admin FROM project_members WHERE project_id = $1 AND user_id = $2
+SELECT r.is_admin FROM project_members pm
+JOIN roles r ON r.id = pm.role_id
+WHERE pm.project_id = $1 AND pm.user_id = $2
 `
 
 type GetProjectMembershipParams struct {
@@ -212,10 +255,27 @@ func (q *Queries) GetProjectMembership(ctx context.Context, arg GetProjectMember
 	return is_admin, err
 }
 
+const getProjectSystemRole = `-- name: GetProjectSystemRole :one
+SELECT id FROM roles WHERE project_id = $1::uuid AND is_system AND name = $2
+`
+
+type GetProjectSystemRoleParams struct {
+	ProjectID uuid.UUID
+	Name      string
+}
+
+func (q *Queries) GetProjectSystemRole(ctx context.Context, arg GetProjectSystemRoleParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getProjectSystemRole, arg.ProjectID, arg.Name)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const listProjectMembers = `-- name: ListProjectMembers :many
-SELECT pm.user_id, u.name, u.email, pm.is_admin, pm.created_at
+SELECT pm.user_id, u.name, u.email, r.id AS role_id, r.name AS role_name, r.is_admin, pm.created_at
 FROM project_members pm
 JOIN users u ON u.id = pm.user_id
+JOIN roles r ON r.id = pm.role_id
 WHERE pm.project_id = $1
 ORDER BY pm.created_at, u.name
 `
@@ -224,6 +284,8 @@ type ListProjectMembersRow struct {
 	UserID    uuid.UUID
 	Name      string
 	Email     string
+	RoleID    uuid.UUID
+	RoleName  string
 	IsAdmin   bool
 	CreatedAt time.Time
 }
@@ -241,6 +303,8 @@ func (q *Queries) ListProjectMembers(ctx context.Context, projectID uuid.UUID) (
 			&i.UserID,
 			&i.Name,
 			&i.Email,
+			&i.RoleID,
+			&i.RoleName,
 			&i.IsAdmin,
 			&i.CreatedAt,
 		); err != nil {
@@ -267,7 +331,8 @@ WITH visible AS (
                 ELSE round(p.task_count_done * 100.0
                      / (p.task_count_not_started + p.task_count_in_progress + p.task_count_done), 2) END::float8 AS progress,
            EXISTS (SELECT 1 FROM project_members pm
-                   WHERE pm.project_id = p.id AND pm.user_id = $5 AND pm.is_admin) AS is_admin
+                   JOIN roles r ON r.id = pm.role_id
+                   WHERE pm.project_id = p.id AND pm.user_id = $5 AND r.is_admin) AS is_admin
     FROM projects p
     WHERE ($6::bool
            OR EXISTS (SELECT 1 FROM project_members pm
@@ -364,7 +429,10 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]L
 }
 
 const lockProjectAdmins = `-- name: LockProjectAdmins :many
-SELECT user_id FROM project_members WHERE project_id = $1 AND is_admin FOR UPDATE
+SELECT pm.user_id FROM project_members pm
+JOIN roles r ON r.id = pm.role_id
+WHERE pm.project_id = $1 AND r.is_admin
+FOR UPDATE
 `
 
 func (q *Queries) LockProjectAdmins(ctx context.Context, projectID uuid.UUID) ([]uuid.UUID, error) {
@@ -404,18 +472,37 @@ func (q *Queries) RemoveProjectMember(ctx context.Context, arg RemoveProjectMemb
 	return result.RowsAffected(), nil
 }
 
-const setProjectMemberAdmin = `-- name: SetProjectMemberAdmin :execrows
-UPDATE project_members SET is_admin = $3 WHERE project_id = $1 AND user_id = $2
+const seedProjectSystemRoles = `-- name: SeedProjectSystemRoles :exec
+WITH new_roles AS (
+    INSERT INTO roles (id, name, description, project_id, is_admin, is_system)
+    VALUES (gen_random_uuid(), 'Admin',  'Project admin',  $1::uuid, TRUE,  TRUE),
+           (gen_random_uuid(), 'Member', 'Project member', $1::uuid, FALSE, TRUE)
+    RETURNING id, name
+)
+INSERT INTO role_policies (role_id, resource, action)
+SELECT n.id, res, 'write'
+FROM new_roles n
+CROSS JOIN (VALUES ('tasks'),('store'),('deliveries')) AS t(res)
+WHERE n.name = 'Member'
 `
 
-type SetProjectMemberAdminParams struct {
-	ProjectID uuid.UUID
-	UserID    uuid.UUID
-	IsAdmin   bool
+func (q *Queries) SeedProjectSystemRoles(ctx context.Context, projectID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, seedProjectSystemRoles, projectID)
+	return err
 }
 
-func (q *Queries) SetProjectMemberAdmin(ctx context.Context, arg SetProjectMemberAdminParams) (int64, error) {
-	result, err := q.db.Exec(ctx, setProjectMemberAdmin, arg.ProjectID, arg.UserID, arg.IsAdmin)
+const setProjectMemberRole = `-- name: SetProjectMemberRole :execrows
+UPDATE project_members SET role_id = $3 WHERE project_id = $1 AND user_id = $2
+`
+
+type SetProjectMemberRoleParams struct {
+	ProjectID uuid.UUID
+	UserID    uuid.UUID
+	RoleID    uuid.UUID
+}
+
+func (q *Queries) SetProjectMemberRole(ctx context.Context, arg SetProjectMemberRoleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setProjectMemberRole, arg.ProjectID, arg.UserID, arg.RoleID)
 	if err != nil {
 		return 0, err
 	}

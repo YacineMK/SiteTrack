@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -36,7 +37,12 @@ type Config struct {
 	OutboxPollInterval   time.Duration
 	OutboxLockTimeout    time.Duration
 	OutboxMaxAttempts    int
+	CORSAllowedOrigins   []string
+	RateLimitGlobal      int
+	RateLimitAuth        int
+	RateLimitWindow      time.Duration
 }
+
 
 func Load() Config {
 	_ = godotenv.Load()
@@ -69,6 +75,10 @@ func Load() Config {
 		OutboxPollInterval:   getEnvDuration("OUTBOX_POLL_INTERVAL", 2*time.Second),
 		OutboxLockTimeout:    getEnvDuration("OUTBOX_LOCK_TIMEOUT", time.Minute),
 		OutboxMaxAttempts:    getEnvInt("OUTBOX_MAX_ATTEMPTS", 5),
+		CORSAllowedOrigins:   strings.Split(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"), ","),
+		RateLimitGlobal:      getEnvInt("RATE_LIMIT_GLOBAL", 60),
+		RateLimitAuth:        getEnvInt("RATE_LIMIT_AUTH", 5),
+		RateLimitWindow:      getEnvDuration("RATE_LIMIT_WINDOW", 10*time.Second),
 	}
 }
 

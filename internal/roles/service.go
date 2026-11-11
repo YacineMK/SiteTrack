@@ -16,11 +16,16 @@ var (
 )
 
 type Service interface {
-	CreateRole(ctx context.Context, req CreateRoleRequest) (RoleResponse, error)
-	ListRoles(ctx context.Context) ([]RoleResponse, error)
-	CreatePolicy(ctx context.Context, roleID uuid.UUID, req CreatePolicyRequest) (PolicyResponse, error)
-	ListPolicies(ctx context.Context, roleID uuid.UUID) ([]PolicyResponse, error)
-	DeletePolicy(ctx context.Context, roleID uuid.UUID, resource, action string) error
+	// scope: nil projectID = app scope (super_admin), non-nil = project scope.
+	CreateRole(ctx context.Context, projectID *uuid.UUID, req CreateRoleRequest) (RoleResponse, error)
+	UpdateRole(ctx context.Context, projectID *uuid.UUID, roleID uuid.UUID, req UpdateRoleRequest) (RoleResponse, error)
+	DeleteRole(ctx context.Context, projectID *uuid.UUID, roleID uuid.UUID) error
+	ListRoles(ctx context.Context, projectID *uuid.UUID) ([]RoleResponse, error)
+
+	CreatePolicy(ctx context.Context, projectID *uuid.UUID, roleID uuid.UUID, req CreatePolicyRequest) (PolicyResponse, error)
+	ListPolicies(ctx context.Context, projectID *uuid.UUID, roleID uuid.UUID) ([]PolicyResponse, error)
+	DeletePolicy(ctx context.Context, projectID *uuid.UUID, roleID uuid.UUID, resource, action string) error
+
 	AssignRole(ctx context.Context, userID uuid.UUID, req AssignRoleRequest) (AssignedUserResponse, error)
 }
 
@@ -33,22 +38,39 @@ func NewService(repo Repository) Service {
 	return &service{repo: repo, utils: NewUtils()}
 }
 
-func (s *service) CreateRole(ctx context.Context, req CreateRoleRequest) (RoleResponse, error) {
+func (s *service) CreateRole(ctx context.Context, projectID *uuid.UUID, req CreateRoleRequest) (RoleResponse, error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Description = strings.TrimSpace(req.Description)
 	if err := req.Validate(); err != nil {
 		return RoleResponse{}, ErrInvalidInput
 	}
 
-	role, err := s.repo.CreateRole(ctx, req.Name, req.Description)
+	role, err := s.repo.CreateRole(ctx, projectID, req.Name, req.Description, req.IsAdmin)
 	if err != nil {
 		return RoleResponse{}, err
 	}
 	return s.utils.ToRoleResponse(role), nil
 }
 
-func (s *service) ListRoles(ctx context.Context) ([]RoleResponse, error) {
-	roles, err := s.repo.ListRoles(ctx)
+func (s *service) UpdateRole(ctx context.Context, projectID *uuid.UUID, roleID uuid.UUID, req UpdateRoleRequest) (RoleResponse, error) {
+	req.Name = strings.TrimSpace(req.Name)
+	req.Description = strings.TrimSpace(req.Description)
+	if err := req.Validate(); err != nil {
+		return RoleResponse{}, ErrInvalidInput
+	}
+	role, err := s.repo.UpdateRole(ctx, projectID, roleID, req.Name, req.Description, req.IsAdmin)
+	if err != nil {
+		return RoleResponse{}, err
+	}
+	return s.utils.ToRoleResponse(role), nil
+}
+
+func (s *service) DeleteRole(ctx context.Context, projectID *uuid.UUID, roleID uuid.UUID) error {
+	return s.repo.DeleteRole(ctx, projectID, roleID)
+}
+
+func (s *service) ListRoles(ctx context.Context, projectID *uuid.UUID) ([]RoleResponse, error) {
+	roles, err := s.repo.ListRoles(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +82,7 @@ func (s *service) ListRoles(ctx context.Context) ([]RoleResponse, error) {
 	return response, nil
 }
 
-func (s *service) CreatePolicy(ctx context.Context, roleID uuid.UUID, req CreatePolicyRequest) (PolicyResponse, error) {
+func (s *service) CreatePolicy(ctx context.Context, projectID *uuid.UUID, roleID uuid.UUID, req CreatePolicyRequest) (PolicyResponse, error) {
 	req.Resource = strings.TrimSpace(req.Resource)
 	req.Action = strings.TrimSpace(req.Action)
 	if err := req.Validate(); err != nil {
@@ -70,7 +92,7 @@ func (s *service) CreatePolicy(ctx context.Context, roleID uuid.UUID, req Create
 		return PolicyResponse{}, ErrInvalidInput
 	}
 
-	if _, err := s.repo.GetRole(ctx, roleID); err != nil {
+	if _, err := s.repo.GetRole(ctx, projectID, roleID); err != nil {
 		return PolicyResponse{}, err
 	}
 	if err := s.repo.AddPolicy(ctx, roleID, req.Resource, req.Action); err != nil {
@@ -84,8 +106,8 @@ func (s *service) CreatePolicy(ctx context.Context, roleID uuid.UUID, req Create
 	}, nil
 }
 
-func (s *service) ListPolicies(ctx context.Context, roleID uuid.UUID) ([]PolicyResponse, error) {
-	if _, err := s.repo.GetRole(ctx, roleID); err != nil {
+func (s *service) ListPolicies(ctx context.Context, projectID *uuid.UUID, roleID uuid.UUID) ([]PolicyResponse, error) {
+	if _, err := s.repo.GetRole(ctx, projectID, roleID); err != nil {
 		return nil, err
 	}
 
@@ -105,11 +127,15 @@ func (s *service) ListPolicies(ctx context.Context, roleID uuid.UUID) ([]PolicyR
 	return response, nil
 }
 
-func (s *service) DeletePolicy(ctx context.Context, roleID uuid.UUID, resource, action string) error {
+func (s *service) DeletePolicy(ctx context.Context, projectID *uuid.UUID, roleID uuid.UUID, resource, action string) error {
 	resource = strings.TrimSpace(resource)
 	action = strings.TrimSpace(action)
 	if resource == "" || action == "" {
 		return ErrInvalidInput
+	}
+
+	if _, err := s.repo.GetRole(ctx, projectID, roleID); err != nil {
+		return err
 	}
 
 	rows, err := s.repo.DeletePolicy(ctx, roleID, resource, action)
@@ -133,12 +159,5 @@ func (s *service) AssignRole(ctx context.Context, userID uuid.UUID, req AssignRo
 		return AssignedUserResponse{}, err
 	}
 
-	return AssignedUserResponse{
-		ID:        user.ID,
-		Name:      user.Name,
-		Email:     user.Email,
-		AppRole:   user.AppRole,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
-	}, nil
+	return AssignedUserResponse(user), nil
 }

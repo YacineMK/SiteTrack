@@ -43,14 +43,16 @@ type service struct {
 	jwt       *kitjwt.Manager
 	blacklist Blacklist
 	utils     Utils
+	bloom     *EmailBloom
 }
 
-func NewService(repo Repository, jwtManager *kitjwt.Manager, blacklist Blacklist) Service {
+func NewService(repo Repository, jwtManager *kitjwt.Manager, blacklist Blacklist, emailBloom *EmailBloom) Service {
 	return &service{
 		repo:      repo,
 		jwt:       jwtManager,
 		blacklist: blacklist,
 		utils:     NewUtils(),
+		bloom:     emailBloom,
 	}
 }
 
@@ -59,6 +61,14 @@ func (s *service) Register(ctx context.Context, req RegisterRequest) (UserRespon
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	req.AppRole = strings.TrimSpace(req.AppRole)
 	if err := req.Validate(); err != nil {
+		return UserResponse{}, ErrInvalidInput
+	}
+
+	roleOK, err := s.repo.RoleExists(ctx, req.AppRole)
+	if err != nil {
+		return UserResponse{}, err
+	}
+	if !roleOK {
 		return UserResponse{}, ErrInvalidInput
 	}
 
@@ -86,6 +96,7 @@ func (s *service) Register(ctx context.Context, req RegisterRequest) (UserRespon
 		return UserResponse{}, err
 	}
 
+	s.bloom.Add(user.Email)
 	return s.utils.ToUserResponse(user), nil
 }
 
@@ -203,6 +214,10 @@ func (s *service) EmailAvailable(ctx context.Context, email string) (bool, error
 	email = strings.ToLower(strings.TrimSpace(email))
 	if err := validation.Validate(email, validation.Required, is.Email); err != nil {
 		return false, ErrInvalidInput
+	}
+
+	if !s.bloom.MaybeExists(email) {
+		return true, nil
 	}
 
 	exists, err := s.repo.ExistsByEmail(ctx, email)

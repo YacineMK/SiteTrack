@@ -25,14 +25,7 @@ func NewUtils() Utils {
 }
 
 func (utils) ToResponse(stock Stock) ProjectStockResponse {
-	return ProjectStockResponse{
-		MaterialID:   stock.MaterialID,
-		Name:         stock.Name,
-		Category:     stock.Category,
-		Unit:         stock.Unit,
-		Quantity:     stock.Quantity,
-		LastDelivery: stock.LastDelivery,
-	}
+	return ProjectStockResponse(stock)
 }
 
 func (u utils) ListResponse(stock []Stock, total int64, limit, offset int32) ListProjectStockResponse {

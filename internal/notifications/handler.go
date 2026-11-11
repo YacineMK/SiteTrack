@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/YacineMK/SiteTrack/internal/middleware"
+	"github.com/YacineMK/SiteTrack/kit/reqctx"
 	jsonutil "github.com/YacineMK/SiteTrack/kit/json"
 )
 
@@ -27,7 +27,7 @@ func NewHandler(svc Service, hub *Hub) *Handler {
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserID(r.Context())
+	userID, ok := reqctx.UserID(r.Context())
 	if !ok {
 		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
@@ -48,7 +48,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) unreadCount(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserID(r.Context())
+	userID, ok := reqctx.UserID(r.Context())
 	if !ok {
 		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
@@ -64,7 +64,7 @@ func (h *Handler) unreadCount(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) markRead(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserID(r.Context())
+	userID, ok := reqctx.UserID(r.Context())
 	if !ok {
 		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
@@ -80,7 +80,7 @@ func (h *Handler) markRead(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) stream(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserID(r.Context())
+	userID, ok := reqctx.UserID(r.Context())
 	if !ok {
 		jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return

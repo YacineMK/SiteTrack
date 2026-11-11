@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	jsonutil "github.com/YacineMK/SiteTrack/kit/json"
+	"github.com/YacineMK/SiteTrack/kit/reqctx"
 )
 
 type PolicyChecker interface {
@@ -14,7 +15,7 @@ type PolicyChecker interface {
 func RequireAppPolicy(checker PolicyChecker, resource, action string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			role, ok := AppRole(r.Context())
+			role, ok := reqctx.AppRole(r.Context())
 			if !ok {
 				jsonutil.Error(w, http.StatusUnauthorized, "unauthorized")
 				return

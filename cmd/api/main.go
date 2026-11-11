@@ -15,7 +15,6 @@ import (
 	"github.com/YacineMK/SiteTrack/internal/app"
 	"github.com/YacineMK/SiteTrack/internal/database"
 	"github.com/YacineMK/SiteTrack/internal/notifications"
-	"github.com/YacineMK/SiteTrack/internal/roles"
 	"github.com/YacineMK/SiteTrack/internal/worker"
 	"github.com/YacineMK/SiteTrack/kit/config"
 	kitjwt "github.com/YacineMK/SiteTrack/kit/jwt"
@@ -51,9 +50,6 @@ func main() {
 	}
 	defer postgres.Close()
 
-	if err := roles.Bootstrap(ctx, postgres.Pool); err != nil {
-		log.Fatal(err)
-	}
 
 	redisClient, err := kitredis.New(ctx, kitredis.Config{
 		Addr:            cfg.RedisAddr,
@@ -72,7 +68,7 @@ func main() {
 
 	jwtManager := kitjwt.New(cfg.JWTSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
 	notificationHub := notifications.NewHub()
-	a := app.New(cfg.Port, postgres, redisClient, jwtManager, cfg.CookieSecure, notificationHub, cfg.InviteTTL, cfg.AppBaseURL)
+	a := app.New(cfg.Port, postgres, redisClient, jwtManager, cfg.CookieSecure, notificationHub, cfg.InviteTTL, cfg.AppBaseURL, cfg.CORSAllowedOrigins)
 
 	runCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

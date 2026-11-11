@@ -8,9 +8,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/YacineMK/SiteTrack/internal/database/sqlc"
+	"github.com/YacineMK/SiteTrack/kit/rbac"
 )
 
 var (
@@ -23,6 +25,7 @@ var (
 	ErrInviteeNotFound = errors.New("user not found")
 	ErrAlreadyMember   = errors.New("user is already a member")
 	ErrProjectInUse    = errors.New("project has deliveries")
+	ErrRoleNotFound    = errors.New("role not found for project")
 )
 
 type Project struct {
@@ -95,6 +98,7 @@ type OutboxEvent struct {
 }
 
 type Repository interface {
+	ProjectPolicies(ctx context.Context, projectID, userID uuid.UUID) ([]rbac.Policy, bool, error)
 	Create(ctx context.Context, project Project, adminID uuid.UUID) (Project, error)
 	GetByDisplayID(ctx context.Context, displayID string) (Project, error)
 	List(ctx context.Context, p ListParams) ([]Project, int64, error)
@@ -102,16 +106,18 @@ type Repository interface {
 	Delete(ctx context.Context, displayID string) (int64, error)
 	ProjectAccess(ctx context.Context, displayID string, userID uuid.UUID) (uuid.UUID, bool, bool, bool, error)
 	ListMembers(ctx context.Context, projectID uuid.UUID) ([]Member, error)
-	SetMemberAdmin(ctx context.Context, projectID, userID uuid.UUID, isAdmin bool) error
+	SetMemberRole(ctx context.Context, projectID, userID, roleID uuid.UUID, isAdmin bool) error
 	RemoveMember(ctx context.Context, projectID, userID uuid.UUID) error
 	Membership(ctx context.Context, projectID, userID uuid.UUID) (bool, bool, error)
 	FindUserByEmail(ctx context.Context, email string) (Invitee, error)
 	CreateInvitationNotification(ctx context.Context, notification InvitationNotification, events []OutboxEvent) error
 	GetInvitationNotification(ctx context.Context, id uuid.UUID) (Invitation, error)
-	LockInvitationNotification(ctx context.Context, id uuid.UUID) (Invitation, error)
 	DeleteInvitationNotification(ctx context.Context, id uuid.UUID) (int64, error)
 	MarkInvitationRead(ctx context.Context, id, userID uuid.UUID) (int64, error)
-	AcceptInvitation(ctx context.Context, id, projectID, userID uuid.UUID, isAdmin bool) error
+	ListProjectPendingInvitations(ctx context.Context, projectID uuid.UUID) ([]PendingInvitation, error)
+	GetProjectRole(ctx context.Context, projectID, roleID uuid.UUID) (ProjectRole, error)
+	DefaultMemberRole(ctx context.Context, projectID uuid.UUID) (ProjectRole, error)
+	AcceptInvitationWithRole(ctx context.Context, id, projectID, userID, roleID uuid.UUID) error
 	RejectInvitation(ctx context.Context, id, userID uuid.UUID) (int64, error)
 }
 
@@ -140,6 +146,16 @@ func (r *PostgresRepository) Create(ctx context.Context, project Project, adminI
 			return err
 		}
 
+		if err := queries.SeedProjectSystemRoles(ctx, row.ID); err != nil {
+			return err
+		}
+		adminRoleID, err := queries.GetProjectSystemRole(ctx, sqlc.GetProjectSystemRoleParams{
+			ProjectID: row.ID, Name: "Admin",
+		})
+		if err != nil {
+			return err
+		}
+
 		project = Project{
 			ID: row.ID, DisplayID: row.DisplayID, Name: row.Name, Description: row.Description,
 			PlannedStartDate: row.PlannedStartDate, PlannedEndDate: row.PlannedEndDate,
@@ -148,7 +164,7 @@ func (r *PostgresRepository) Create(ctx context.Context, project Project, adminI
 		return queries.AddProjectMember(ctx, sqlc.AddProjectMemberParams{
 			ProjectID: project.ID,
 			UserID:    adminID,
-			IsAdmin:   true,
+			RoleID:    adminRoleID,
 		})
 	})
 	if err != nil {
@@ -289,20 +305,22 @@ func (r *PostgresRepository) ListMembers(ctx context.Context, projectID uuid.UUI
 	return members, nil
 }
 
-func (r *PostgresRepository) SetMemberAdmin(ctx context.Context, projectID, userID uuid.UUID, isAdmin bool) error {
+func (r *PostgresRepository) SetMemberRole(ctx context.Context, projectID, userID, roleID uuid.UUID, isAdmin bool) error {
 	return pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		queries := r.queries.WithTx(tx)
 
+		// If the new role is not admin and the member is currently the last
+		// admin, block the move so a project never loses all admins.
 		if !isAdmin {
 			if err := r.ensureAnotherAdmin(ctx, queries, projectID, userID); err != nil {
 				return err
 			}
 		}
 
-		rows, err := queries.SetProjectMemberAdmin(ctx, sqlc.SetProjectMemberAdminParams{
+		rows, err := queries.SetProjectMemberRole(ctx, sqlc.SetProjectMemberRoleParams{
 			ProjectID: projectID,
 			UserID:    userID,
-			IsAdmin:   isAdmin,
+			RoleID:    roleID,
 		})
 		if err != nil {
 			return err
@@ -375,6 +393,26 @@ func (r *PostgresRepository) Membership(ctx context.Context, projectID, userID u
 	return true, isAdmin, nil
 }
 
+func (r *PostgresRepository) ProjectPolicies(ctx context.Context, projectID, userID uuid.UUID) ([]rbac.Policy, bool, error) {
+	rows, err := r.queries.GetProjectMemberPolicies(ctx, sqlc.GetProjectMemberPoliciesParams{
+		ProjectID: projectID, UserID: userID,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	if len(rows) == 0 {
+		return nil, false, nil
+	}
+	isAdmin := rows[0].IsAdmin
+	policies := make([]rbac.Policy, 0, len(rows))
+	for _, row := range rows {
+		if row.Resource.Valid && row.Action.Valid {
+			policies = append(policies, rbac.Policy{Resource: row.Resource.String, Action: row.Action.String})
+		}
+	}
+	return policies, isAdmin, nil
+}
+
 func (r *PostgresRepository) FindUserByEmail(ctx context.Context, email string) (Invitee, error) {
 	row, err := r.queries.FindUserByEmail(ctx, email)
 	if err != nil {
@@ -425,17 +463,6 @@ func (r *PostgresRepository) GetInvitationNotification(ctx context.Context, id u
 	return toInvitation(row), nil
 }
 
-func (r *PostgresRepository) LockInvitationNotification(ctx context.Context, id uuid.UUID) (Invitation, error) {
-	row, err := r.queries.LockNotification(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Invitation{}, ErrInviteNotFound
-		}
-		return Invitation{}, err
-	}
-	return toInvitation(row), nil
-}
-
 func (r *PostgresRepository) DeleteInvitationNotification(ctx context.Context, id uuid.UUID) (int64, error) {
 	return r.queries.DeleteNotification(ctx, id)
 }
@@ -454,7 +481,7 @@ func (r *PostgresRepository) MarkInvitationRead(ctx context.Context, id, userID 
 	return 1, nil
 }
 
-func (r *PostgresRepository) AcceptInvitation(ctx context.Context, id, projectID, userID uuid.UUID, isAdmin bool) error {
+func (r *PostgresRepository) AcceptInvitationWithRole(ctx context.Context, id, projectID, userID, roleID uuid.UUID) error {
 	return pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		queries := r.queries.WithTx(tx)
 
@@ -469,10 +496,20 @@ func (r *PostgresRepository) AcceptInvitation(ctx context.Context, id, projectID
 			return ErrInviteNotFound
 		}
 
+		// Re-verify role still belongs to the project (admin may have deleted it).
+		if _, err := queries.GetRoleByID(ctx, sqlc.GetRoleByIDParams{
+			ID: roleID, ProjectID: pgtype.UUID{Bytes: projectID, Valid: true},
+		}); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrInviteNotFound
+			}
+			return err
+		}
+
 		if err := queries.AddProjectMemberIfAbsent(ctx, sqlc.AddProjectMemberIfAbsentParams{
 			ProjectID: projectID,
 			UserID:    userID,
-			IsAdmin:   isAdmin,
+			RoleID:    roleID,
 		}); err != nil {
 			return err
 		}
@@ -488,6 +525,60 @@ func (r *PostgresRepository) AcceptInvitation(ctx context.Context, id, projectID
 		}
 		return nil
 	})
+}
+
+type ProjectRole struct {
+	ID       uuid.UUID
+	Name     string
+	IsAdmin  bool
+	IsSystem bool
+}
+
+func (r *PostgresRepository) GetProjectRole(ctx context.Context, projectID, roleID uuid.UUID) (ProjectRole, error) {
+	row, err := r.queries.GetRoleByID(ctx, sqlc.GetRoleByIDParams{
+		ID: roleID, ProjectID: pgtype.UUID{Bytes: projectID, Valid: true},
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ProjectRole{}, ErrRoleNotFound
+		}
+		return ProjectRole{}, err
+	}
+	return ProjectRole{ID: row.ID, Name: row.Name, IsAdmin: row.IsAdmin, IsSystem: row.IsSystem}, nil
+}
+
+func (r *PostgresRepository) DefaultMemberRole(ctx context.Context, projectID uuid.UUID) (ProjectRole, error) {
+	id, err := r.queries.GetProjectSystemRole(ctx, sqlc.GetProjectSystemRoleParams{
+		ProjectID: projectID, Name: "Member",
+	})
+	if err != nil {
+		return ProjectRole{}, err
+	}
+	return ProjectRole{ID: id, Name: "Member", IsSystem: true}, nil
+}
+
+type PendingInvitation struct {
+	ID        uuid.UUID
+	UserID    uuid.UUID
+	Name      string
+	Email     string
+	Data      []byte
+	CreatedAt time.Time
+}
+
+func (r *PostgresRepository) ListProjectPendingInvitations(ctx context.Context, projectID uuid.UUID) ([]PendingInvitation, error) {
+	rows, err := r.queries.ListProjectPendingInvitations(ctx, projectID.String())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]PendingInvitation, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, PendingInvitation{
+			ID: row.ID, UserID: row.UserID, Name: row.Name, Email: row.Email,
+			Data: row.Data, CreatedAt: row.CreatedAt,
+		})
+	}
+	return out, nil
 }
 
 func (r *PostgresRepository) RejectInvitation(ctx context.Context, id, userID uuid.UUID) (int64, error) {

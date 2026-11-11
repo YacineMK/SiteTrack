@@ -1,0 +1,17 @@
+meta {
+  name: List project roles
+  type: http
+  seq: 14
+}
+
+get {
+  url: {{baseUrl}}/projects/{{projectId}}/roles/
+  body: none
+  auth: none
+}
+
+docs {
+  Project admin only. Returns roles scoped to this project: the built-in
+  Admin and Member (is_system=true) plus any custom roles the admin has
+  created. 200 -> [{id, name, description, is_admin, is_system, ...}].
+}

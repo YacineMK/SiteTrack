@@ -32,6 +32,8 @@ type Repository interface {
 	GetByEmail(ctx context.Context, email string) (User, error)
 	GetByID(ctx context.Context, id uuid.UUID) (User, error)
 	ExistsByEmail(ctx context.Context, email string) (bool, error)
+	ListAllEmails(ctx context.Context) ([]string, error)
+	RoleExists(ctx context.Context, name string) (bool, error)
 }
 
 type PostgresRepository struct {
@@ -92,6 +94,14 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id uuid.UUID) (User, e
 
 func (r *PostgresRepository) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	return r.queries.EmailExists(ctx, email)
+}
+
+func (r *PostgresRepository) ListAllEmails(ctx context.Context) ([]string, error) {
+	return r.queries.ListAllEmails(ctx)
+}
+
+func (r *PostgresRepository) RoleExists(ctx context.Context, name string) (bool, error) {
+	return r.queries.RoleExists(ctx, name)
 }
 
 func isUniqueViolation(err error) bool {

@@ -3,9 +3,11 @@
 Backend API for SiteTrack — a construction project and materials tracker.
 Go 1.26 · PostgreSQL 17 · Redis 7 · one `docker compose up` to run.
 
-- 59 endpoints · see [`bruno/`](./bruno) for the API client collection.
-- 5 migrations grouped by domain · `migrations/00{1..5}_*.sql`.
-- End-to-end smoke test · `tmp/e2e.sh` (57 checks against a running API).
+- 60+ endpoints · see [`bruno/`](./bruno) for the API client collection.
+- 6 migrations grouped by domain · `migrations/00{1..6}_*.sql`.
+- Real end-to-end tests · `go test -tags=e2e ./test/e2e` (dockertest spins
+  up Postgres + Redis, 88 subtests across auth, projects, tasks,
+  materials, deliveries, invitations, roles, escalation).
 
 ---
 
@@ -143,7 +145,9 @@ flowchart LR
    blacklist in Redis, reloads the user from Postgres so a fresh
    `app_role` is used on every request.
 3. `RequireAppPolicy` checks `role_policies` for app-level actions
-   (company store, materials, roles…).
+   (company store, materials, roles…). `email-available` short-circuits
+   via an in-process Bloom filter (see `internal/auth/bloom.go`) so the
+   common "brand-new email" path never touches Postgres.
 4. `RequireProjectMember` / `RequireProjectAdmin` reads
    `project_members` and returns **404** (not 403) if the caller is not
    a member. SuperAdmin bypasses.
@@ -219,11 +223,13 @@ in-process hub.
 
 ```mermaid
 erDiagram
-    app_roles ||--o{ role_policies : grants
-    app_roles ||--o{ users : "assigned to"
+    roles ||--o{ role_policies : grants
+    roles ||--o{ users : "assigned to"
+    roles ||--o{ project_members : "scoped role"
     users ||--o{ project_members : joins
     users ||--o{ notifications : receives
     projects ||--o{ project_members : has
+    projects ||--o{ roles : "custom roles"
     projects ||--o{ tasks : contains
     projects ||--o{ project_store_stock : stores
     projects ||--o{ deliveries : "sender or receiver"
@@ -239,15 +245,16 @@ erDiagram
 email jobs but does not reference them with a foreign key (it's the
 durable work queue picked up by the background worker).
 
-Five migrations, one concern per file:
+Six migrations, one concern per file:
 
 | File | Tables |
 |---|---|
-| `001_auth.sql` | `app_roles`, `role_policies`, `users` (+ seed 3 roles) |
+| `001_auth.sql` | `app_roles`, `role_policies`, `users` (+ seed 3 roles and their policies) |
 | `002_projects.sql` | `projects`, `project_members`, `project_id_counter`, member-count trigger, pg_trgm indexes |
 | `003_tasks.sql` | `tasks`, `task_dependencies`, `task_id_counter`, `blocked` recompute + task-count triggers |
 | `004_inventory.sql` | `materials`, `company_store_stock`, `project_store_stock`, `deliveries`, `delivery_lines`, enums |
 | `005_notifications.sql` | `notifications`, `outbox` |
+| `006_merged_roles.sql` | merges `app_roles` → `roles` with a nullable `project_id`; seeds per-project Admin + Member; migrates `project_members.is_admin` to `role_id` |
 
 Stored, trigger-maintained counters that matter for the Projects list:
 `projects.member_count`, `task_count_not_started / in_progress / done`,
@@ -338,12 +345,21 @@ SELECT because it depends on today's date.
 ### Fast email pre-check (`/auth/email-available`)
 
 The register screen calls `GET /auth/email-available?email=…` so the UI
-can show "that email is taken" before the user submits. The query is an
-index-backed `SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)` —
-constant time against the unique index on `users.email`. At the scale
-of the brief (5k users) it is a sub-millisecond lookup. A probabilistic
-Bloom filter in front of the DB would be the upgrade if the table ever
-grows into the millions.
+can show "that email is taken" before the user submits. An in-process
+Bloom filter sits in front of Postgres: a negative hit means the email
+is definitely new and the handler returns `available=true` without a DB
+round-trip. A positive hit falls through to
+`SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)` against the
+unique btree index on `users.email` — the only call that can be a false
+positive, which the DB resolves definitively. The filter is warmed from
+the users table at `auth.New` and extended on every successful
+`Register`. Sized for 100k users at 1% false-positive rate; see
+`internal/auth/bloom.go`.
+
+In-process (not Postgres' `bloom` extension) because the pg extension
+is for multi-column AND filters, not single-column equality on an
+already-unique column — it would add a second index path to each
+`INSERT` for no read-side gain.
 
 ### Rate limiting
 

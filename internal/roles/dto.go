@@ -10,6 +10,7 @@ import (
 type CreateRoleRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	IsAdmin     bool   `json:"is_admin"`
 }
 
 func (r CreateRoleRequest) Validate() error {
@@ -19,10 +20,27 @@ func (r CreateRoleRequest) Validate() error {
 	)
 }
 
-type RoleResponse struct {
-	ID          string `json:"id"`
+type UpdateRoleRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	IsAdmin     bool   `json:"is_admin"`
+}
+
+func (r UpdateRoleRequest) Validate() error {
+	return validation.ValidateStruct(&r,
+		validation.Field(&r.Name, validation.Required, validation.Length(1, 64)),
+		validation.Field(&r.Description, validation.Required, validation.Length(1, 255)),
+	)
+}
+
+type RoleResponse struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	IsAdmin     bool      `json:"is_admin"`
+	IsSystem    bool      `json:"is_system"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type AssignRoleRequest struct {

@@ -19,7 +19,7 @@ func (r RegisterRequest) Validate() error {
 		validation.Field(&r.Name, validation.Required, validation.Length(1, 100)),
 		validation.Field(&r.Email, validation.Required, is.Email),
 		validation.Field(&r.Password, validation.Required, validation.Length(8, 128)),
-		validation.Field(&r.AppRole, validation.Required, validation.In("user", "company_store_manager", "super_admin")),
+		validation.Field(&r.AppRole, validation.Required, validation.Length(1, 64)),
 	)
 }
 
