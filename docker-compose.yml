@@ -68,6 +68,8 @@ services:
     environment:
       DATABASE_URL: ${PROD_DATABASE_URL}
       REDIS_ADDR: ${PROD_REDIS_ADDR}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-signoz-otel-collector:4317}
+      APP_ENV: ${APP_ENV:-production}
     depends_on:
       postgres:
         condition: service_healthy
@@ -80,9 +82,163 @@ services:
     networks:
       - sitetrack
 
+  # --- SigNoz observability stack (profile: signoz) ---
+  # Brings up ClickHouse + zookeeper + otel-collector + query + frontend.
+  # Enable with: docker compose --profile signoz up -d
+  # UI: http://localhost:3301
+  signoz-zookeeper:
+    profiles: ["signoz"]
+    image: bitnami/zookeeper:3.7.1
+    container_name: signoz-zookeeper
+    hostname: zookeeper-1
+    user: root
+    environment:
+      - ZOO_SERVER_ID=1
+      - ALLOW_ANONYMOUS_LOGIN=yes
+      - ZOO_AUTOPURGE_INTERVAL=1
+    volumes:
+      - signoz_zookeeper:/bitnami/zookeeper
+    networks:
+      - sitetrack
+
+  signoz-clickhouse:
+    profiles: ["signoz"]
+    image: clickhouse/clickhouse-server:24.1.2-alpine
+    container_name: signoz-clickhouse
+    hostname: clickhouse
+    tty: true
+    depends_on:
+      - signoz-zookeeper
+    volumes:
+      - ./monitoring/signoz/clickhouse-config.xml:/etc/clickhouse-server/config.xml
+      - ./monitoring/signoz/clickhouse-users.xml:/etc/clickhouse-server/users.xml
+      - ./monitoring/signoz/custom-function.xml:/etc/clickhouse-server/custom-function.xml
+      - ./monitoring/signoz/clickhouse-cluster.xml:/etc/clickhouse-server/config.d/cluster.xml
+      - signoz_clickhouse:/var/lib/clickhouse/
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "0.0.0.0:8123/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 262144
+        hard: 262144
+    networks:
+      - sitetrack
+
+  signoz-otel-collector-migrator:
+    profiles: ["signoz"]
+    image: signoz/signoz-schema-migrator:0.102.1
+    container_name: signoz-otel-collector-migrator
+    command: ["--dsn=tcp://clickhouse:9000"]
+    depends_on:
+      signoz-clickhouse:
+        condition: service_healthy
+    networks:
+      - sitetrack
+
+  signoz-otel-collector:
+    profiles: ["signoz"]
+    image: signoz/signoz-otel-collector:0.102.1
+    container_name: signoz-otel-collector
+    hostname: signoz-otel-collector
+    user: root
+    command:
+      - "--config=/etc/otel-collector-config.yaml"
+      - "--manager-config=/etc/manager-config.yaml"
+      - "--copy-path=/var/tmp/collector-config.yaml"
+      - "--feature-gates=-pkg.translator.prometheus.NormalizeName"
+    volumes:
+      - ./monitoring/signoz/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      - ./monitoring/signoz/otel-collector-opamp-config.yaml:/etc/manager-config.yaml
+    environment:
+      - OTEL_RESOURCE_ATTRIBUTES=host.name=sitetrack-host,os.type=linux
+      - DOCKER_MULTI_NODE_CLUSTER=false
+      - LOW_CARDINAL_EXCEPTION_GROUPING=false
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    restart: on-failure
+    depends_on:
+      signoz-clickhouse:
+        condition: service_healthy
+      signoz-otel-collector-migrator:
+        condition: service_completed_successfully
+      signoz-query-service:
+        condition: service_healthy
+    networks:
+      - sitetrack
+
+  signoz-query-service:
+    profiles: ["signoz"]
+    image: signoz/query-service:0.49.0
+    container_name: signoz-query-service
+    command: ["-config=/root/config/prometheus.yml"]
+    volumes:
+      - ./monitoring/signoz/prometheus.yml:/root/config/prometheus.yml
+      - signoz_query:/var/lib/signoz/
+    environment:
+      - ClickHouseUrl=tcp://clickhouse:9000
+      - ALERTMANAGER_API_PREFIX=http://signoz-alertmanager:9093/api/
+      - SIGNOZ_LOCAL_DB_PATH=/var/lib/signoz/signoz.db
+      - STORAGE=clickhouse
+      - GODEBUG=netdns=go
+      - TELEMETRY_ENABLED=true
+      - DEPLOYMENT_TYPE=docker-standalone-amd
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "localhost:8080/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      signoz-clickhouse:
+        condition: service_healthy
+      signoz-otel-collector-migrator:
+        condition: service_completed_successfully
+    networks:
+      - sitetrack
+
+  signoz-alertmanager:
+    profiles: ["signoz"]
+    image: signoz/alertmanager:0.23.5
+    container_name: signoz-alertmanager
+    volumes:
+      - signoz_alertmanager:/data
+    command:
+      - --queryService.url=http://signoz-query-service:8085
+      - --storage.path=/data
+    depends_on:
+      signoz-query-service:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - sitetrack
+
+  signoz-frontend:
+    profiles: ["signoz"]
+    image: signoz/frontend:0.49.0
+    container_name: signoz-frontend
+    restart: on-failure
+    depends_on:
+      - signoz-alertmanager
+      - signoz-query-service
+    ports:
+      - "3301:3301"
+    volumes:
+      - ./monitoring/signoz/nginx-config.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - sitetrack
+
 volumes:
   postgres_data:
   redis_data:
+  signoz_zookeeper:
+  signoz_clickhouse:
+  signoz_query:
+  signoz_alertmanager:
 
 networks:
   sitetrack:
