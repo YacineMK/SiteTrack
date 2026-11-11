@@ -72,3 +72,7 @@ func (a *App) Run() error {
 func (a *App) Shutdown(ctx context.Context) error {
 	return a.server.Shutdown(ctx)
 }
+
+func (a *App) Handler() http.Handler {
+	return a.server.Mux()
+}

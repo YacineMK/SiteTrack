@@ -373,20 +373,3 @@ func (q *Queries) UpdateRole(ctx context.Context, arg UpdateRoleParams) (UpdateR
 	)
 	return i, err
 }
-
-const upsertAppRolePolicyByName = `-- name: UpsertAppRolePolicyByName :exec
-INSERT INTO role_policies (role_id, resource, action)
-SELECT r.id, $2, $3 FROM roles r WHERE r.name = $1 AND r.project_id IS NULL
-ON CONFLICT DO NOTHING
-`
-
-type UpsertAppRolePolicyByNameParams struct {
-	Name     string
-	Resource string
-	Action   string
-}
-
-func (q *Queries) UpsertAppRolePolicyByName(ctx context.Context, arg UpsertAppRolePolicyByNameParams) error {
-	_, err := q.db.Exec(ctx, upsertAppRolePolicyByName, arg.Name, arg.Resource, arg.Action)
-	return err
-}

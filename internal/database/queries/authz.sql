@@ -56,10 +56,6 @@ JOIN roles r ON r.id = u.role_id;
 -- name: AddRolePolicy :exec
 INSERT INTO role_policies (role_id, resource, action) VALUES ($1, $2, $3);
 
--- name: UpsertAppRolePolicyByName :exec
-INSERT INTO role_policies (role_id, resource, action)
-SELECT r.id, $2, $3 FROM roles r WHERE r.name = $1 AND r.project_id IS NULL
-ON CONFLICT DO NOTHING;
 
 -- name: ListRolePolicies :many
 SELECT role_id, resource, action FROM role_policies
