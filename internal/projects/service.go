@@ -113,18 +113,45 @@ func (s *service) List(ctx context.Context, p ListParams) (ListProjectsResponse,
 }
 
 func (s *service) Update(ctx context.Context, displayID string, isAdmin bool, req UpdateProjectRequest) (ProjectResponse, error) {
-	req.Name = strings.TrimSpace(req.Name)
-	req.Description = strings.TrimSpace(req.Description)
+	if req.Name != nil {
+		trimmed := strings.TrimSpace(*req.Name)
+		req.Name = &trimmed
+	}
+	if req.Description != nil {
+		trimmed := strings.TrimSpace(*req.Description)
+		req.Description = &trimmed
+	}
 	if err := req.Validate(); err != nil {
 		return ProjectResponse{}, ErrInvalidInput
 	}
 
-	start, end, err := s.utils.ParseDates(req.PlannedStartDate, req.PlannedEndDate)
+	existing, err := s.repo.GetByDisplayID(ctx, displayID)
 	if err != nil {
 		return ProjectResponse{}, err
 	}
 
-	project, err := s.repo.Update(ctx, displayID, req.Name, req.Description, start, end)
+	name := existing.Name
+	if req.Name != nil {
+		name = *req.Name
+	}
+	description := existing.Description
+	if req.Description != nil {
+		description = *req.Description
+	}
+	startStr := existing.PlannedStartDate.Format(dateLayout)
+	if req.PlannedStartDate != nil {
+		startStr = *req.PlannedStartDate
+	}
+	endStr := existing.PlannedEndDate.Format(dateLayout)
+	if req.PlannedEndDate != nil {
+		endStr = *req.PlannedEndDate
+	}
+	start, end, err := s.utils.ParseDates(startStr, endStr)
+	if err != nil {
+		return ProjectResponse{}, err
+	}
+
+	project, err := s.repo.Update(ctx, displayID, name, description, start, end)
 	if err != nil {
 		return ProjectResponse{}, err
 	}
