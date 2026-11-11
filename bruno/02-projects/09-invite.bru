@@ -17,7 +17,7 @@ headers {
 body:json {
   {
     "email": "seed.user2@example.com",
-    "role": "member"
+    "role_id": "{{projectRoleId}}"
   }
 }
 
@@ -26,6 +26,8 @@ script:post-response {
 }
 
 docs {
-  Project admin only. role: member | admin. The invitee gets a notification
-  and joins only after accepting. 201 -> InvitationResponse. 409 if pending.
+  Project admin only. role_id is optional — omit to assign the project's
+  default Member role. The invitee gets a notification and joins only
+  after accepting. One-time use (claim lives in Redis). 201 ->
+  InvitationResponse. 409 if a pending invitation already exists.
 }

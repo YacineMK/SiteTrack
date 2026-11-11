@@ -1,0 +1,16 @@
+meta {
+  name: List pending invitations
+  type: http
+  seq: 13
+}
+
+get {
+  url: {{baseUrl}}/projects/{{projectId}}/invitations
+  body: none
+  auth: none
+}
+
+docs {
+  Project admin only. Returns unanswered invitations for this project.
+  200 -> {items:[{id, user_id, name, email, role_id, role_name, created_at}]}.
+}

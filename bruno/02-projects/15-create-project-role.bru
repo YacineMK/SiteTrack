@@ -1,0 +1,33 @@
+meta {
+  name: Create project role
+  type: http
+  seq: 15
+}
+
+post {
+  url: {{baseUrl}}/projects/{{projectId}}/roles/
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Foreman",
+    "description": "Can edit tasks, nothing else",
+    "is_admin": false
+  }
+}
+
+script:post-response {
+  bru.setEnvVar("projectRoleId", res.body.id);
+}
+
+docs {
+  Project admin only. Custom role scoped to this project. Attach
+  policies via POST /projects/{id}/roles/{role_id}/policies. 201 ->
+  {id, name, description, is_admin, is_system:false, ...}.
+}
