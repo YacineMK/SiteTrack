@@ -23,16 +23,16 @@ func (r CreateTaskRequest) Validate() error {
 }
 
 type UpdateTaskRequest struct {
-	Name             string `json:"name"`
-	PlannedStartDate string `json:"planned_start_date"`
-	PlannedEndDate   string `json:"planned_end_date"`
+	Name             *string `json:"name,omitempty"`
+	PlannedStartDate *string `json:"planned_start_date,omitempty"`
+	PlannedEndDate   *string `json:"planned_end_date,omitempty"`
 }
 
 func (r UpdateTaskRequest) Validate() error {
 	return validation.ValidateStruct(&r,
-		validation.Field(&r.Name, validation.Required, validation.Length(1, 200)),
-		validation.Field(&r.PlannedStartDate, validation.Required),
-		validation.Field(&r.PlannedEndDate, validation.Required),
+		validation.Field(&r.Name, validation.When(r.Name != nil, validation.Required, validation.Length(1, 200))),
+		validation.Field(&r.PlannedStartDate, validation.When(r.PlannedStartDate != nil, validation.Required)),
+		validation.Field(&r.PlannedEndDate, validation.When(r.PlannedEndDate != nil, validation.Required)),
 	)
 }
 

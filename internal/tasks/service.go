@@ -155,14 +155,12 @@ func (s *service) List(ctx context.Context, projectDisplayID, query, status, fro
 }
 
 func (s *service) Update(ctx context.Context, projectDisplayID, taskDisplayID string, req UpdateTaskRequest) (TaskResponse, error) {
-	req.Name = strings.TrimSpace(req.Name)
+	if req.Name != nil {
+		trimmed := strings.TrimSpace(*req.Name)
+		req.Name = &trimmed
+	}
 	if err := req.Validate(); err != nil {
 		return TaskResponse{}, ErrInvalidInput
-	}
-
-	start, end, err := s.utils.ParseDates(req.PlannedStartDate, req.PlannedEndDate)
-	if err != nil {
-		return TaskResponse{}, err
 	}
 
 	project, err := s.projects.GetByDisplayID(ctx, projectDisplayID)
@@ -170,7 +168,29 @@ func (s *service) Update(ctx context.Context, projectDisplayID, taskDisplayID st
 		return TaskResponse{}, err
 	}
 
-	task, err := s.repo.Update(ctx, project.ID, taskDisplayID, req.Name, start, end)
+	existing, err := s.repo.Get(ctx, project.ID, taskDisplayID)
+	if err != nil {
+		return TaskResponse{}, err
+	}
+
+	name := existing.Name
+	if req.Name != nil {
+		name = *req.Name
+	}
+	startStr := existing.PlannedStartDate.Format(dateLayout)
+	if req.PlannedStartDate != nil {
+		startStr = *req.PlannedStartDate
+	}
+	endStr := existing.PlannedEndDate.Format(dateLayout)
+	if req.PlannedEndDate != nil {
+		endStr = *req.PlannedEndDate
+	}
+	start, end, err := s.utils.ParseDates(startStr, endStr)
+	if err != nil {
+		return TaskResponse{}, err
+	}
+
+	task, err := s.repo.Update(ctx, project.ID, taskDisplayID, name, start, end)
 	if err != nil {
 		return TaskResponse{}, err
 	}
