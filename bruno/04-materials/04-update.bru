@@ -16,12 +16,11 @@ headers {
 
 body:json {
   {
-    "name": "Cement, OPC 50 kg bag",
-    "category": "binder",
-    "unit": "bag"
+    "category": "binder"
   }
 }
 
 docs {
-  200 -> MaterialResponse. 409 -> duplicate name.
+  Partial PATCH — send only the fields you want to change. Accepted:
+  name, category, unit. 200 -> MaterialResponse. 409 -> duplicate name.
 }

@@ -16,12 +16,12 @@ headers {
 
 body:json {
   {
-    "name": "Pour level 2 slab (north)",
-    "planned_start_date": "2026-02-01",
-    "planned_end_date": "2026-02-12"
+    "name": "Pour level 2 slab (north)"
   }
 }
 
 docs {
-  Project member. 200 -> TaskResponse. Status is not editable here.
+  Project member. Partial PATCH — send only the fields you want to change.
+  Accepted: name, planned_start_date, planned_end_date. Status is not
+  editable here (use /start, /done, /reopen). 200 -> TaskResponse.
 }

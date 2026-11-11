@@ -16,13 +16,12 @@ headers {
 
 body:json {
   {
-    "name": "Riverside Tower (rev B)",
-    "description": "Level 2 slab works",
-    "planned_start_date": "2026-01-01",
-    "planned_end_date": "2026-12-31"
+    "description": "Level 2 slab works"
   }
 }
 
 docs {
-  Project admin only. 200 -> ProjectResponse. 403 for members who are not admins.
+  Project admin only. Partial PATCH — send only the fields you want to
+  change. Accepted: name, description, planned_start_date, planned_end_date.
+  200 -> ProjectResponse. 403 for members who are not admins.
 }
