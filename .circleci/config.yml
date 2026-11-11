@@ -17,9 +17,6 @@ jobs:
             - /home/circleci/go/pkg/mod
 
   e2e:
-    # dockertest spins up Postgres + Redis containers, so the job needs a real
-    # Docker daemon. The machine executor gives us one; remote-docker doesn't
-    # share the host network dockertest expects.
     machine:
       image: ubuntu-2204:current
     steps:
