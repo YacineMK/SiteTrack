@@ -79,12 +79,12 @@ type ListMembersResponse struct {
 }
 
 type UpdateMemberRequest struct {
-	IsAdmin *bool `json:"is_admin"`
+	RoleID uuid.UUID `json:"role_id"`
 }
 
 func (r UpdateMemberRequest) Validate() error {
-	if r.IsAdmin == nil {
-		return errors.New("is_admin is required")
+	if r.RoleID == uuid.Nil {
+		return errors.New("role_id is required")
 	}
 	return nil
 }

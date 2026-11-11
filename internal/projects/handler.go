@@ -146,7 +146,7 @@ func (h *Handler) updateMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.SetMemberAdmin(r.Context(), projectID, userID, req); err != nil {
+	if err := h.svc.SetMemberRole(r.Context(), projectID, userID, req); err != nil {
 		h.utils.WriteServiceError(w, err)
 		return
 	}
