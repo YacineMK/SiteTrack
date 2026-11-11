@@ -23,7 +23,7 @@ type Service interface {
 	Update(ctx context.Context, displayID string, isAdmin bool, req UpdateProjectRequest) (ProjectResponse, error)
 	Delete(ctx context.Context, displayID string) error
 	ListMembers(ctx context.Context, projectID uuid.UUID) (ListMembersResponse, error)
-	SetMemberAdmin(ctx context.Context, projectID, userID uuid.UUID, req UpdateMemberRequest) error
+	SetMemberRole(ctx context.Context, projectID, userID uuid.UUID, req UpdateMemberRequest) error
 	RemoveMember(ctx context.Context, projectID, userID uuid.UUID) error
 	Invite(ctx context.Context, projectID uuid.UUID, projectDisplayID string, inviterID uuid.UUID, req InviteRequest) (InvitationResponse, error)
 	WithdrawInvitation(ctx context.Context, projectID, notificationID uuid.UUID) error
@@ -153,11 +153,16 @@ func (s *service) ListMembers(ctx context.Context, projectID uuid.UUID) (ListMem
 	return s.utils.MembersResponse(members), nil
 }
 
-func (s *service) SetMemberAdmin(ctx context.Context, projectID, userID uuid.UUID, req UpdateMemberRequest) error {
+func (s *service) SetMemberRole(ctx context.Context, projectID, userID uuid.UUID, req UpdateMemberRequest) error {
 	if err := req.Validate(); err != nil {
 		return ErrInvalidInput
 	}
-	return s.repo.SetMemberAdmin(ctx, projectID, userID, *req.IsAdmin)
+	// Enforce scope: role must belong to this project.
+	role, err := s.repo.GetProjectRole(ctx, projectID, req.RoleID)
+	if err != nil {
+		return err
+	}
+	return s.repo.SetMemberRole(ctx, projectID, userID, role.ID, role.IsAdmin)
 }
 
 func (s *service) RemoveMember(ctx context.Context, projectID, userID uuid.UUID) error {

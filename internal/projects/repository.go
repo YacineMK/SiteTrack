@@ -106,7 +106,7 @@ type Repository interface {
 	Delete(ctx context.Context, displayID string) (int64, error)
 	ProjectAccess(ctx context.Context, displayID string, userID uuid.UUID) (uuid.UUID, bool, bool, bool, error)
 	ListMembers(ctx context.Context, projectID uuid.UUID) ([]Member, error)
-	SetMemberAdmin(ctx context.Context, projectID, userID uuid.UUID, isAdmin bool) error
+	SetMemberRole(ctx context.Context, projectID, userID, roleID uuid.UUID, isAdmin bool) error
 	RemoveMember(ctx context.Context, projectID, userID uuid.UUID) error
 	Membership(ctx context.Context, projectID, userID uuid.UUID) (bool, bool, error)
 	FindUserByEmail(ctx context.Context, email string) (Invitee, error)
@@ -305,25 +305,16 @@ func (r *PostgresRepository) ListMembers(ctx context.Context, projectID uuid.UUI
 	return members, nil
 }
 
-func (r *PostgresRepository) SetMemberAdmin(ctx context.Context, projectID, userID uuid.UUID, isAdmin bool) error {
+func (r *PostgresRepository) SetMemberRole(ctx context.Context, projectID, userID, roleID uuid.UUID, isAdmin bool) error {
 	return pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		queries := r.queries.WithTx(tx)
 
+		// If the new role is not admin and the member is currently the last
+		// admin, block the move so a project never loses all admins.
 		if !isAdmin {
 			if err := r.ensureAnotherAdmin(ctx, queries, projectID, userID); err != nil {
 				return err
 			}
-		}
-
-		roleName := "Member"
-		if isAdmin {
-			roleName = "Admin"
-		}
-		roleID, err := queries.GetProjectSystemRole(ctx, sqlc.GetProjectSystemRoleParams{
-			ProjectID: projectID, Name: roleName,
-		})
-		if err != nil {
-			return err
 		}
 
 		rows, err := queries.SetProjectMemberRole(ctx, sqlc.SetProjectMemberRoleParams{
