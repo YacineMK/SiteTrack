@@ -137,6 +137,30 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow
 	return i, err
 }
 
+const listAllEmails = `-- name: ListAllEmails :many
+SELECT email FROM users
+`
+
+func (q *Queries) ListAllEmails(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listAllEmails)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, err
+		}
+		items = append(items, email)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const roleExists = `-- name: RoleExists :one
 SELECT EXISTS(SELECT 1 FROM roles WHERE name = $1 AND project_id IS NULL)
 `

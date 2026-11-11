@@ -21,6 +21,8 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20210307081110-f21760c49a8d // indirect
+	github.com/bits-and-blooms/bitset v1.24.2 // indirect
+	github.com/bits-and-blooms/bloom/v3 v3.7.1 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic/loader v0.5.3 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
