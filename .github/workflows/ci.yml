@@ -15,4 +15,16 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go build ./...
-      - run: go build -o /tmp/api ./cmd/api && go build -o /tmp/seeder ./kit/seeder
+      - run: go test ./... -count=1
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      # dockertest talks to the Docker socket on the runner.
+      - run: go test -tags=e2e ./test/e2e -count=1 -timeout=10m
